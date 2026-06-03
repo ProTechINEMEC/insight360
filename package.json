@@ -1,0 +1,21 @@
+{
+  "name": "insight360",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev:api": "npm --workspace=apps/api run dev",
+    "dev:web": "npm --workspace=apps/web run dev",
+    "build:web": "npm --workspace=apps/web run build",
+    "db:migrate": "npm --workspace=apps/api run db:migrate",
+    "db:rollback": "npm --workspace=apps/api run db:rollback",
+    "db:seed": "npm --workspace=apps/api run db:seed"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  }
+}

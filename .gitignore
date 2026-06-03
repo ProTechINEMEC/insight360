@@ -1,0 +1,13 @@
+node_modules/
+.env
+dist/
+*.local
+.DS_Store
+coverage/
+*.log
+logs/
+tmp/
+.nyc_output/
+apps/web/dist/
+apps/api/dist/
+data/
