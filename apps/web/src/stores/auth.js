@@ -51,12 +51,10 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  // Called by Axios interceptor when access token expires (401)
-  async function refreshAccessToken() {
-    const { data } = await api.post('/auth/refresh')
-    accessToken.value = data.accessToken
-    user.value = data.user
-    return data.accessToken
+  // Called when a new access token is obtained via refresh
+  function setTokens(token, userData) {
+    accessToken.value = token
+    user.value = userData
   }
 
   function getAccessToken() {
@@ -70,7 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     logout,
     tryRestoreSession,
-    refreshAccessToken,
+    setTokens,
     getAccessToken,
   }
 })

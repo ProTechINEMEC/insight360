@@ -2,10 +2,19 @@ import axios from 'axios'
 
 // Base Axios instance for all API calls
 export const api = axios.create({
-  baseURL: `${import.meta.env.VITE_API_URL || ''}/api/v1`,
+  baseURL: '/api/v1',
   withCredentials: true,  // Required for httpOnly refresh token cookie
   timeout: 30000,
 })
+
+// Token getter — set from auth store after Pinia is initialized
+let _getToken = () => null
+let _onUnauthorized = () => {}
+
+export function setApiAuthHandlers(getToken, onUnauthorized) {
+  _getToken = getToken
+  _onUnauthorized = onUnauthorized
+}
 
 // Flag to prevent multiple concurrent refresh attempts
 let isRefreshing = false
@@ -19,13 +28,9 @@ function processQueue(error, token = null) {
   refreshQueue = []
 }
 
-// Request interceptor: attach access token from Pinia store
+// Request interceptor: attach access token from auth store
 api.interceptors.request.use((config) => {
-  // Dynamically import to avoid circular dependency
-  // useAuthStore() cannot be called at module level (Pinia not yet initialized)
-  const { useAuthStore } = require('@/stores/auth')
-  const auth = useAuthStore()
-  const token = auth.getAccessToken()
+  const token = _getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
@@ -44,7 +49,6 @@ api.interceptors.response.use(
       !originalRequest._retry
     ) {
       if (isRefreshing) {
-        // Queue this request until refresh completes
         return new Promise((resolve, reject) => {
           refreshQueue.push({ resolve, reject })
         }).then((token) => {
@@ -57,18 +61,14 @@ api.interceptors.response.use(
       isRefreshing = true
 
       try {
-        const { useAuthStore } = await import('@/stores/auth')
-        const auth = useAuthStore()
-        const newToken = await auth.refreshAccessToken()
+        const { data } = await api.post('/auth/refresh')
+        const newToken = data.accessToken
         processQueue(null, newToken)
         originalRequest.headers.Authorization = `Bearer ${newToken}`
         return api(originalRequest)
       } catch (refreshError) {
         processQueue(refreshError, null)
-        // Refresh failed — force logout
-        const { useAuthStore } = await import('@/stores/auth')
-        const auth = useAuthStore()
-        await auth.logout()
+        _onUnauthorized()
         return Promise.reject(refreshError)
       } finally {
         isRefreshing = false

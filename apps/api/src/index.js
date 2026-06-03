@@ -63,6 +63,7 @@ app.use('/api/v1/auth', require('./routes/auth'))
 app.use('/api/v1/users', require('./routes/users'))
 app.use('/api/v1/assets', require('./routes/assets'))
 app.use('/api/v1/measurements', require('./routes/measurements'))
+app.use('/api/v1/health', require('./routes/health'))
 
 // ─── Health Check ──────────────────────────────────────────────────────────
 

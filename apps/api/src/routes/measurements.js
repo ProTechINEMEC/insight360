@@ -3,6 +3,7 @@ const Joi = require('joi')
 const { db } = require('../db/knex')
 const { authenticate, authorize } = require('../middleware/auth')
 const { validate } = require('../middleware/validate')
+const { snapshotActivoHealth } = require('../services/health')
 
 router.use(authenticate)
 
@@ -39,6 +40,58 @@ router.post('/puntos', authorize('admin', 'ingeniero_confiabilidad'), validate(J
     res.status(201).json({ punto })
   } catch (err) {
     if (err.constraint) return res.status(409).json({ error: 'Código de punto ya existe en este activo' })
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// PUT /api/v1/measurements/puntos/:id
+router.put('/puntos/:id', authorize('admin', 'ingeniero_confiabilidad'), validate(Joi.object({
+  nombre: Joi.string().max(200),
+  unidad: Joi.string().max(30),
+  limite_alerta: Joi.number().allow(null),
+  limite_alarma: Joi.number().allow(null),
+  descripcion: Joi.string().allow('', null),
+  activo: Joi.boolean(),
+})), async (req, res) => {
+  try {
+    const [punto] = await db('cbm.puntos_medicion')
+      .where({ id: req.params.id })
+      .update(req.body)
+      .returning('*')
+    if (!punto) return res.status(404).json({ error: 'Punto no encontrado' })
+    res.json({ punto })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// GET /api/v1/measurements/latest?activo_id= — latest reading per punto (for dashboard cards)
+router.get('/latest', async (req, res) => {
+  if (!req.query.activo_id) return res.status(422).json({ error: 'activo_id requerido' })
+  try {
+    const puntos = await db('cbm.puntos_medicion')
+      .where({ activo_id: req.query.activo_id, activo: true })
+
+    if (!puntos.length) return res.json({ puntos: [] })
+
+    const ids = puntos.map((p) => p.id)
+    const latest = await db('cbm.measurement_entries')
+      .whereIn('punto_id', ids)
+      .select('punto_id', db.raw('last(valor, time) as valor'), db.raw('max(time) as last_time'))
+      .groupBy('punto_id')
+
+    const latestMap = {}
+    latest.forEach((r) => { latestMap[r.punto_id] = r })
+
+    const result = puntos.map((p) => ({
+      ...p,
+      ultimo_valor: latestMap[p.id]?.valor ?? null,
+      ultimo_tiempo: latestMap[p.id]?.last_time ?? null,
+    }))
+    res.json({ puntos: result })
+  } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
   }
@@ -86,13 +139,14 @@ router.post('/readings', authorize(...WRITE_ROLES), validate(Joi.object({
   try {
     const { punto_id, valor, time, fuente, notas } = req.body
     await db('cbm.measurement_entries').insert({
-      time,
-      punto_id,
-      valor,
-      fuente,
-      notas,
-      registrado_by: req.user.id,
+      time, punto_id, valor, fuente, notas, registrado_by: req.user.id,
     })
+
+    // Async health snapshot — fire-and-forget, don't block response
+    db('cbm.puntos_medicion').where({ id: punto_id }).select('activo_id').first()
+      .then((p) => p && snapshotActivoHealth(p.activo_id))
+      .catch((e) => console.error('Health snapshot error:', e))
+
     res.status(201).json({ message: 'Lectura registrada' })
   } catch (err) {
     console.error(err)
