@@ -24,13 +24,17 @@ const routes = [
     children: [
       {
         path: '',
-        name: 'Dashboard',
-        component: () => import('@/views/DashboardView.vue'),
+        redirect: '/activos/arbol',
       },
       {
         path: 'activos',
         name: 'Assets',
         component: () => import('@/views/assets/AssetsView.vue'),
+      },
+      {
+        path: 'activos/arbol',
+        name: 'AssetTree',
+        component: () => import('@/views/assets/AssetTreeView.vue'),
       },
       {
         path: 'activos/:id',
