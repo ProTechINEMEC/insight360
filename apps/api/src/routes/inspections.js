@@ -496,6 +496,65 @@ router.delete('/inspecciones/:id/archivos/:archivoId', authorize(...ADMIN_ROLES)
   }
 })
 
+// ─── Resumen Activo (for tree-view detail panel) ─────────────────────────────
+
+// GET /api/v1/inspections/resumen-activo?activo_id=
+// Returns per-technique last inspection + list of components (for new inspection modal)
+router.get('/resumen-activo', async (req, res) => {
+  const { activo_id } = req.query
+  if (!activo_id) return res.status(400).json({ error: 'activo_id requerido' })
+
+  try {
+    // All applicable techniques for this activo (via componentes × catalogo_modos_falla)
+    const tecnicasAplicables = await db.raw(`
+      SELECT DISTINCT t.id, t.codigo, t.nombre, t.norma_referencia
+      FROM cbm.componentes c
+      JOIN cbm.catalogo_modos_falla mf ON mf.tipo_componente_id = c.tipo_componente_id
+      JOIN cbm.tecnicas t ON t.id = mf.tecnica_id
+      WHERE c.activo_id = ? AND t.activo = TRUE
+      ORDER BY t.nombre
+    `, [activo_id])
+
+    // Latest inspection per technique
+    const latestInspecciones = await db.raw(`
+      SELECT DISTINCT ON (i.tecnica_id)
+        i.id AS inspeccion_id,
+        i.tecnica_id,
+        i.fecha,
+        i.condicion,
+        i.estado_operacional,
+        i.analista,
+        c.nombre AS componente_nombre
+      FROM cbm.inspecciones i
+      JOIN cbm.componentes c ON i.componente_id = c.id
+      WHERE c.activo_id = ?
+      ORDER BY i.tecnica_id, i.fecha DESC
+    `, [activo_id])
+
+    const latestMap = {}
+    for (const row of latestInspecciones.rows) {
+      latestMap[row.tecnica_id] = row
+    }
+
+    // Components for the modal
+    const componentes = await db('cbm.componentes as c')
+      .leftJoin('cbm.tipos_componente as tc', 'c.tipo_componente_id', 'tc.id')
+      .where({ 'c.activo_id': activo_id, 'c.activo': true })
+      .select('c.id', 'c.nombre', 'c.cmms_id', 'tc.codigo as tipo_codigo', 'tc.nombre as tipo_nombre')
+      .orderBy('c.nombre')
+
+    const tecnicas = tecnicasAplicables.rows.map((t) => ({
+      ...t,
+      ultima_inspeccion: latestMap[t.id] || null,
+    }))
+
+    res.json({ tecnicas, componentes })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── Salud Matrix ───────────────────────────────────────────────────────────
 
 // GET /api/v1/inspections/salud-matriz?contrato_id=&planta_id=

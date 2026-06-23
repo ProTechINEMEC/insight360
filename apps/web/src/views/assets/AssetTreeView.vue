@@ -118,14 +118,7 @@
                           <span class="activo-tag">{{ activo.tag }}</span>
                           <span class="activo-name">{{ activo.nombre }}</span>
                         </div>
-                        <div class="activo-right">
-                          <button
-                            v-if="canWrite"
-                            class="quick-add-btn"
-                            :title="`Registrar lectura en ${activo.tag}`"
-                            @click.stop="openQuickReading(activo)"
-                          >+</button>
-                        </div>
+                        <div class="activo-right"></div>
                       </div>
                     </div>
                   </div>
@@ -153,31 +146,35 @@
             </div>
           </div>
 
-          <!-- Puntos de medición -->
+          <!-- Técnicas de inspección -->
           <div class="detail-section">
-            <div class="detail-section-title">Puntos de Medición</div>
+            <div class="detail-section-header">
+              <div class="detail-section-title">Técnicas de Inspección</div>
+              <button v-if="canWrite" class="btn btn-primary btn-sm" @click="openNewInspeccion">+ Agregar Registro</button>
+            </div>
             <div v-if="loadingDetail" class="detail-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>
-            <div v-else-if="!detailPuntos.length" class="detail-empty">Sin puntos configurados</div>
-            <div v-else class="detail-puntos">
+            <div v-else-if="!detailTecnicas.length" class="detail-empty">Sin técnicas aplicables configuradas</div>
+            <div v-else class="detail-tecnicas">
               <div
-                v-for="p in detailPuntos"
-                :key="p.id"
-                :class="['detail-punto', `estado-left-${getPuntoEstado(p)}`]"
-                @click="openChart(p)"
+                v-for="t in detailTecnicas"
+                :key="t.id"
+                class="detail-tecnica"
+                :class="{ 'has-data': t.ultima_inspeccion, 'clickable': t.ultima_inspeccion }"
+                @click="t.ultima_inspeccion && goToInspeccion(t.ultima_inspeccion.inspeccion_id)"
               >
-                <div class="dpunto-left">
-                  <div class="dpunto-code">{{ p.codigo }}</div>
-                  <div class="dpunto-name">{{ p.nombre }}</div>
-                  <div class="dpunto-type">{{ p.tipo }}</div>
+                <div class="dt-left">
+                  <div class="dt-codigo">{{ t.codigo }}</div>
+                  <div class="dt-nombre">{{ t.nombre }}</div>
                 </div>
-                <div class="dpunto-right">
-                  <div v-if="p.ultimo_valor !== null" class="dpunto-val">
-                    {{ fmtVal(p.ultimo_valor) }}<span class="dpunto-unit"> {{ p.unidad }}</span>
-                  </div>
-                  <div v-else class="dpunto-nodata">—</div>
-                  <span :class="`estado-badge estado-${getPuntoEstado(p)}`">
-                    {{ ESTADO_LABELS[getPuntoEstado(p)] }}
+                <div class="dt-right" v-if="t.ultima_inspeccion">
+                  <span :class="`cond-badge cond-badge-${t.ultima_inspeccion.condicion}`">
+                    {{ COND_LABELS[t.ultima_inspeccion.condicion] }}
                   </span>
+                  <div class="dt-fecha">{{ fmtDate(t.ultima_inspeccion.fecha) }}</div>
+                  <div class="dt-analista" v-if="t.ultima_inspeccion.analista">{{ t.ultima_inspeccion.analista }}</div>
+                </div>
+                <div class="dt-right dt-nodata" v-else>
+                  <span class="dt-pending">Sin datos</span>
                 </div>
               </div>
             </div>
@@ -185,9 +182,6 @@
 
           <!-- Actions -->
           <div class="detail-actions">
-            <button class="btn btn-primary" @click="openQuickReading(selectedActivo)">
-              + Registrar Lectura
-            </button>
             <RouterLink :to="`/activos/${selectedActivo.id}`" class="btn btn-secondary">
               Ver detalle completo →
             </RouterLink>
@@ -201,77 +195,103 @@
       </div>
     </div>
 
-    <!-- Quick reading modal -->
+    <!-- New Inspection modal -->
     <Teleport to="body">
-      <div v-if="quickReadingActivo" class="modal-overlay" @click.self="quickReadingActivo = null">
-        <div class="modal">
+      <div v-if="newInspModal.open" class="modal-overlay" @click.self="newInspModal.open = false">
+        <div class="modal modal-insp">
           <div class="modal-header">
             <div>
-              <h4>Registrar Lectura</h4>
-              <div class="modal-sub">{{ quickReadingActivo.tag }} — {{ quickReadingActivo.nombre }}</div>
+              <h4>Registrar Inspección</h4>
+              <div class="modal-sub">{{ selectedActivo?.tag }} — {{ selectedActivo?.nombre }}</div>
             </div>
-            <button class="modal-close" @click="quickReadingActivo = null">✕</button>
+            <button class="modal-close" @click="newInspModal.open = false">✕</button>
           </div>
           <div class="modal-body">
-            <div v-if="loadingQRPuntos" class="detail-loading"><div class="spinner"></div></div>
-            <div v-else-if="!quickPuntos.length" class="detail-empty">
-              Este activo no tiene puntos de medición.
-              <RouterLink to="/mediciones">Configurar en Mediciones</RouterLink>
-            </div>
-            <template v-else>
+            <!-- Step 1: component + technique -->
+            <div class="field-row-2">
               <div class="field">
-                <label>Punto de Medición *</label>
-                <select v-model="qrPuntoId">
-                  <option value="">Seleccionar punto</option>
-                  <option v-for="p in quickPuntos" :key="p.id" :value="p.id">
-                    {{ p.codigo }} — {{ p.nombre }} ({{ p.unidad }})
+                <label>Componente *</label>
+                <select v-model="newInspModal.componente_id" @change="onComponenteChange">
+                  <option value="">Seleccionar componente…</option>
+                  <option v-for="c in newInspModal.componentes" :key="c.id" :value="c.id">
+                    {{ c.nombre }} <span v-if="c.tipo_nombre">({{ c.tipo_nombre }})</span>
                   </option>
                 </select>
               </div>
-              <template v-if="qrSelectedPunto">
-                <div class="field">
-                  <label>Valor ({{ qrSelectedPunto.unidad }}) *</label>
-                  <input v-model.number="qrValor" type="number" step="any" autofocus required />
-                  <div v-if="qrValor !== null && qrValor !== ''" class="reading-preview">
-                    <span :class="`estado-badge estado-${calcEstado(qrValor, qrSelectedPunto)}`">
-                      {{ ESTADO_LABELS[calcEstado(qrValor, qrSelectedPunto)] }}
-                    </span>
-                    <span v-if="qrSelectedPunto.limite_alarma" class="limit-hint">
-                      Alerta ≥ {{ qrSelectedPunto.limite_alerta }} / Alarma ≥ {{ qrSelectedPunto.limite_alarma }}
-                    </span>
-                  </div>
-                </div>
-                <div class="field">
-                  <label>Notas</label>
-                  <textarea v-model="qrNotas" rows="2"></textarea>
-                </div>
-              </template>
-              <div v-if="qrError" class="error-alert">{{ qrError }}</div>
-              <div class="modal-footer">
-                <button class="btn btn-secondary" @click="quickReadingActivo = null">Cancelar</button>
-                <button class="btn btn-primary" :disabled="!qrPuntoId || qrValor === null || qrSubmitting" @click="submitQuickReading">
-                  {{ qrSubmitting ? 'Guardando...' : 'Guardar' }}
-                </button>
+              <div class="field">
+                <label>Técnica *</label>
+                <select v-model="newInspModal.tecnica_id" :disabled="!newInspModal.componente_id" @change="onTecnicaChange">
+                  <option value="">Seleccionar técnica…</option>
+                  <option v-for="t in newInspModal.tecnicasDisponibles" :key="t.id" :value="t.id">
+                    {{ t.codigo }} — {{ t.nombre }}
+                  </option>
+                </select>
               </div>
-            </template>
-          </div>
-        </div>
-      </div>
-    </Teleport>
-
-    <!-- Trend chart modal -->
-    <Teleport to="body">
-      <div v-if="chartPunto" class="modal-overlay" @click.self="chartPunto = null">
-        <div class="modal modal-xl">
-          <div class="modal-header">
-            <div>
-              <h4>{{ chartPunto.nombre }}</h4>
-              <span class="modal-sub">{{ chartPunto.codigo }} · {{ chartPunto.unidad }}</span>
             </div>
-            <button class="modal-close" @click="chartPunto = null">✕</button>
-          </div>
-          <div class="modal-body">
-            <TrendChart :punto="chartPunto" />
+
+            <div class="field-row-2">
+              <div class="field">
+                <label>Fecha *</label>
+                <input type="datetime-local" v-model="newInspModal.fecha" />
+              </div>
+              <div class="field">
+                <label>Analista</label>
+                <input type="text" v-model="newInspModal.analista" placeholder="Nombre del analista" />
+              </div>
+            </div>
+
+            <div class="field-row-2">
+              <div class="field">
+                <label>Estado Operacional *</label>
+                <select v-model="newInspModal.estado_operacional">
+                  <option v-for="e in ESTADOS_OP" :key="e.value" :value="e.value">{{ e.label }}</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Condición General *</label>
+                <div class="cond-radio-group">
+                  <label v-for="c in CONDICIONES" :key="c.value" :class="['cond-radio', `cond-radio-${c.value}`, { selected: newInspModal.condicion === c.value }]">
+                    <input type="radio" :value="c.value" v-model="newInspModal.condicion" />
+                    {{ c.label }}
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Measuring points (optional) -->
+            <div v-if="newInspModal.puntos.length" class="puntos-section">
+              <div class="puntos-section-title">Valores Medidos <span class="optional">(opcional)</span></div>
+              <div class="puntos-inputs">
+                <div v-for="p in newInspModal.puntos" :key="p.id" class="punto-input-row">
+                  <label class="punto-input-label">
+                    {{ p.nombre }}
+                    <span class="punto-input-unit">{{ p.unidad }}</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    v-model.number="newInspModal.valores[p.id]"
+                    class="punto-input"
+                    placeholder="—"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Observaciones</label>
+              <textarea v-model="newInspModal.observaciones" rows="2" placeholder="Observaciones generales…"></textarea>
+            </div>
+
+            <div v-if="newInspModal.error" class="error-alert">{{ newInspModal.error }}</div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" @click="newInspModal.open = false">Cancelar</button>
+              <button class="btn btn-primary"
+                :disabled="!newInspModal.componente_id || !newInspModal.tecnica_id || !newInspModal.condicion || newInspModal.saving"
+                @click="submitInspeccion">
+                {{ newInspModal.saving ? 'Guardando…' : 'Guardar' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -293,29 +313,42 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/services/api'
-import TrendChart from '@/components/TrendChart.vue'
 import AssetFormModal from '@/components/AssetFormModal.vue'
 
 const auth = useAuthStore()
+const router = useRouter()
 
 const CRITICIDADES = [
   { key: 'critico', label: 'Crítico' },
   { key: 'esencial', label: 'Esencial' },
   { key: 'general', label: 'General' },
 ]
-const ESTADO_LABELS = { bueno: 'Bueno', alerta: 'Alerta', critico: 'Crítico', desconocido: 'Sin datos' }  // still used by puntos section
+const COND_LABELS = { normal: 'Normal', observacion: 'Observación', alerta: 'Alerta', urgencia: 'Urgencia' }
+const CONDICIONES = [
+  { value: 'normal', label: 'Normal' },
+  { value: 'observacion', label: 'Observación' },
+  { value: 'alerta', label: 'Alerta' },
+  { value: 'urgencia', label: 'Urgencia' },
+]
+const ESTADOS_OP = [
+  { value: 'operativo',          label: 'Operativo' },
+  { value: 'operativo_limitado', label: 'Op. Limitado' },
+  { value: 'stand_by',           label: 'Stand By' },
+  { value: 'fuera_de_servicio',  label: 'Fuera de Servicio' },
+  { value: 'dado_de_baja',       label: 'Dado de Baja' },
+]
 
 // State
-const rawTree = ref([])   // full hierarchy from API (contratos → plantas → sistemas → activos)
+const rawTree = ref([])
 const loadingTree = ref(true)
 const search = ref('')
 const selectedActivoId = ref(null)
 const selectedActivo = ref(null)
-const detailPuntos = ref([])
+const detailTecnicas = ref([])
 const loadingDetail = ref(false)
-const chartPunto = ref(null)
 
 const filters = reactive({ criticidad: [] })
 
@@ -336,25 +369,31 @@ function openAssetForm(contrato = '', planta = '', sistema = '') {
   assetFormOpen.value = true
 }
 
-function onAssetSaved(activo) {
+function onAssetSaved() {
   assetFormOpen.value = false
   loadTree()
 }
 
-// Quick reading modal
-const quickReadingActivo = ref(null)
-const quickPuntos = ref([])
-const loadingQRPuntos = ref(false)
-const qrPuntoId = ref('')
-const qrValor = ref(null)
-const qrNotas = ref('')
-const qrSubmitting = ref(false)
-const qrError = ref('')
+// New inspection modal
+const newInspModal = reactive({
+  open: false,
+  saving: false,
+  error: '',
+  componentes: [],
+  tecnicasDisponibles: [],
+  puntos: [],
+  valores: {},
+  componente_id: '',
+  tecnica_id: '',
+  fecha: new Date().toISOString().slice(0, 16),
+  analista: '',
+  estado_operacional: 'operativo',
+  condicion: '',
+  observaciones: '',
+})
 
 const canWrite = computed(() => ['admin', 'ingeniero_confiabilidad', 'supervisor', 'tecnico_campo'].includes(auth.user?.role))
 const hasActiveFilters = computed(() => search.value || filters.criticidad.length)
-
-const qrSelectedPunto = computed(() => quickPuntos.value.find((p) => p.id === qrPuntoId.value) || null)
 
 // Filter + search logic
 const filteredTree = computed(() => {
@@ -434,72 +473,97 @@ function expandAll(open) {
 async function selectActivo(activo) {
   selectedActivoId.value = activo.id
   selectedActivo.value = activo
-  detailPuntos.value = []
+  detailTecnicas.value = []
   loadingDetail.value = true
   try {
-    const { data } = await api.get('/measurements/latest', { params: { activo_id: activo.id } })
-    detailPuntos.value = data.puntos
+    const { data } = await api.get('/inspections/resumen-activo', { params: { activo_id: activo.id } })
+    detailTecnicas.value = data.tecnicas
+    // Pre-load components for modal
+    newInspModal.componentes = data.componentes
   } finally {
     loadingDetail.value = false
   }
 }
 
-function getPuntoEstado(punto) {
-  if (punto.ultimo_valor === null) return 'desconocido'
-  return calcEstado(punto.ultimo_valor, punto)
+function fmtDate(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function calcEstado(valor, punto) {
-  if (valor === null) return 'desconocido'
-  if (punto.limite_alarma !== null && Number(valor) >= Number(punto.limite_alarma)) return 'critico'
-  if (punto.limite_alerta !== null && Number(valor) >= Number(punto.limite_alerta)) return 'alerta'
-  return 'bueno'
+function goToInspeccion(id) {
+  router.push(`/inspecciones/${id}`)
 }
 
-function fmtVal(v) {
-  if (v === null) return '—'
-  const n = Number(v)
-  return n % 1 === 0 ? String(n) : n.toFixed(3)
+async function openNewInspeccion() {
+  newInspModal.open = true
+  newInspModal.componente_id = ''
+  newInspModal.tecnica_id = ''
+  newInspModal.tecnicasDisponibles = []
+  newInspModal.puntos = []
+  newInspModal.valores = {}
+  newInspModal.condicion = ''
+  newInspModal.observaciones = ''
+  newInspModal.analista = auth.user ? `${auth.user.nombre} ${auth.user.apellido}`.trim() : ''
+  newInspModal.fecha = new Date().toISOString().slice(0, 16)
+  newInspModal.estado_operacional = 'operativo'
+  newInspModal.error = ''
 }
 
-function openChart(punto) { chartPunto.value = punto }
+async function onComponenteChange() {
+  newInspModal.tecnica_id = ''
+  newInspModal.tecnicasDisponibles = []
+  newInspModal.puntos = []
+  newInspModal.valores = {}
+  if (!newInspModal.componente_id) return
+  // Get techniques applicable to this component's tipo
+  const comp = newInspModal.componentes.find((c) => c.id === newInspModal.componente_id)
+  if (!comp) return
+  // Use detailTecnicas (already loaded) as applicable tecnicas for this activo
+  // Filter to those that apply via the component's tipo (use all detailTecnicas for simplicity)
+  newInspModal.tecnicasDisponibles = detailTecnicas.value
+}
 
-async function openQuickReading(activo) {
-  quickReadingActivo.value = activo
-  qrPuntoId.value = ''
-  qrValor.value = null
-  qrNotas.value = ''
-  qrError.value = ''
-  quickPuntos.value = []
-  loadingQRPuntos.value = true
+async function onTecnicaChange() {
+  newInspModal.puntos = []
+  newInspModal.valores = {}
+  if (!newInspModal.tecnica_id) return
   try {
-    const { data } = await api.get('/measurements/puntos', { params: { activo_id: activo.id } })
-    quickPuntos.value = data.puntos
-  } finally {
-    loadingQRPuntos.value = false
-  }
+    const { data } = await api.get('/inspections/puntos-tecnica', { params: { tecnica_id: newInspModal.tecnica_id } })
+    newInspModal.puntos = data.puntos
+  } catch { /* ignore */ }
 }
 
-async function submitQuickReading() {
-  qrSubmitting.value = true
-  qrError.value = ''
+async function submitInspeccion() {
+  newInspModal.saving = true
+  newInspModal.error = ''
   try {
-    await api.post('/measurements/readings', {
-      punto_id: qrPuntoId.value,
-      valor: qrValor.value,
-      notas: qrNotas.value || undefined,
+    const { data } = await api.post('/inspections/inspecciones', {
+      componente_id: newInspModal.componente_id,
+      tecnica_id: newInspModal.tecnica_id,
+      fecha: new Date(newInspModal.fecha).toISOString(),
+      analista: newInspModal.analista || null,
+      estado_operacional: newInspModal.estado_operacional,
+      condicion: newInspModal.condicion,
+      observaciones: newInspModal.observaciones || null,
     })
-    quickReadingActivo.value = null
 
-    // Refresh detail puntos
-    if (selectedActivoId.value) {
-      const { data } = await api.get('/measurements/latest', { params: { activo_id: selectedActivoId.value } })
-      detailPuntos.value = data.puntos
+    // Save measurement values if any were filled
+    const mediciones = newInspModal.puntos
+      .filter((p) => newInspModal.valores[p.id] !== undefined && newInspModal.valores[p.id] !== null && newInspModal.valores[p.id] !== '')
+      .map((p) => ({ punto_id: p.id, valor: newInspModal.valores[p.id] }))
+
+    if (mediciones.length) {
+      await api.put(`/inspections/inspecciones/${data.inspeccion.id}/mediciones`, { mediciones })
     }
+
+    newInspModal.open = false
+    // Refresh detail panel
+    const refreshed = await api.get('/inspections/resumen-activo', { params: { activo_id: selectedActivoId.value } })
+    detailTecnicas.value = refreshed.data.tecnicas
   } catch (err) {
-    qrError.value = err.response?.data?.error || 'Error al guardar'
+    newInspModal.error = err.response?.data?.error || 'Error al guardar la inspección'
   } finally {
-    qrSubmitting.value = false
+    newInspModal.saving = false
   }
 }
 
@@ -646,32 +710,34 @@ onMounted(loadTree)
 .detail-badges { display: flex; flex-direction: column; gap: 0.375rem; align-items: flex-end; }
 
 
-.detail-section-title { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
+.detail-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem; }
+.detail-section-title { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .detail-loading, .detail-empty { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.5rem; color: var(--color-text-muted); font-size: 0.875rem; }
 
-.detail-puntos { display: flex; flex-direction: column; gap: 0.5rem; }
-.detail-punto {
+/* Technique cards */
+.detail-tecnicas { display: flex; flex-direction: column; gap: 0.5rem; }
+.detail-tecnica {
   display: flex; justify-content: space-between; align-items: center;
   padding: 0.625rem 0.75rem; border-radius: 8px; background: var(--color-bg);
-  border-left: 3px solid var(--color-border); cursor: pointer; transition: background 0.1s;
+  border: 1px solid var(--color-border); transition: background 0.1s, border-color 0.1s;
 }
-.detail-punto:hover { background: #eef0f3; }
-.estado-left-bueno { border-left-color: #16a34a; }
-.estado-left-alerta { border-left-color: #d97706; }
-.estado-left-critico { border-left-color: #dc2626; }
-.dpunto-code { font-size: 0.7rem; color: var(--color-text-muted); font-family: monospace; }
-.dpunto-name { font-weight: 500; font-size: 0.8125rem; }
-.dpunto-type { font-size: 0.7rem; color: var(--color-text-muted); }
-.dpunto-right { text-align: right; }
-.dpunto-val { font-size: 1.125rem; font-weight: 700; line-height: 1.2; }
-.dpunto-unit { font-size: 0.7rem; font-weight: 400; color: var(--color-text-muted); }
-.dpunto-nodata { font-size: 0.875rem; color: var(--color-text-muted); }
+.detail-tecnica.clickable { cursor: pointer; }
+.detail-tecnica.clickable:hover { background: #eef4ff; border-color: #bfdbfe; }
+.dt-left { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
+.dt-codigo { font-size: 0.7rem; font-family: monospace; color: var(--color-text-muted); text-transform: uppercase; }
+.dt-nombre { font-weight: 500; font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.125rem; flex-shrink: 0; margin-left: 0.75rem; }
+.dt-fecha { font-size: 0.7rem; color: var(--color-text-muted); }
+.dt-analista { font-size: 0.7rem; color: var(--color-text-muted); font-style: italic; }
+.dt-nodata { opacity: 0.7; }
+.dt-pending { font-size: 0.75rem; color: var(--color-text-muted); }
 
-.estado-badge { display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; margin-top: 0.125rem; }
-.estado-badge.estado-bueno { background: #f0fdf4; color: #16a34a; }
-.estado-badge.estado-alerta { background: #fffbeb; color: #d97706; }
-.estado-badge.estado-critico { background: #fef2f2; color: #dc2626; }
-.estado-badge.estado-desconocido { background: var(--color-bg); color: var(--color-text-muted); }
+/* Condition badges */
+.cond-badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.cond-badge-normal { background: #f0fdf4; color: #15803d; }
+.cond-badge-observacion { background: #eff6ff; color: #1d4ed8; }
+.cond-badge-alerta { background: #fffbeb; color: #b45309; }
+.cond-badge-urgencia { background: #fef2f2; color: #dc2626; }
 
 .detail-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: auto; }
 
@@ -682,6 +748,7 @@ onMounted(loadTree)
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
 .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
 .modal-xl { max-width: 860px; }
+.modal-insp { max-width: 580px; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border); }
 .modal-header h4 { font-size: 1rem; font-weight: 700; margin: 0; }
 .modal-sub { font-size: 0.75rem; color: var(--color-text-muted); }
@@ -691,9 +758,30 @@ onMounted(loadTree)
 
 .field label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--color-text-secondary); margin-bottom: 0.25rem; }
 .field input, .field select, .field textarea { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.875rem; font-family: inherit; }
-.field input:focus, .field select:focus { outline: none; border-color: var(--color-brand); }
-.reading-preview { margin-top: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
-.limit-hint { font-size: 0.75rem; color: var(--color-text-muted); }
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--color-brand); }
+.field-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+
+/* Condition radio group */
+.cond-radio-group { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+.cond-radio { display: flex; align-items: center; gap: 0.25rem; padding: 0.3rem 0.625rem; border-radius: 6px; border: 1.5px solid var(--color-border); cursor: pointer; font-size: 0.8125rem; font-weight: 500; transition: all 0.1s; }
+.cond-radio input[type="radio"] { display: none; }
+.cond-radio-normal.selected { background: #f0fdf4; border-color: #16a34a; color: #15803d; }
+.cond-radio-observacion.selected { background: #eff6ff; border-color: #3b82f6; color: #1d4ed8; }
+.cond-radio-alerta.selected { background: #fffbeb; border-color: #f59e0b; color: #b45309; }
+.cond-radio-urgencia.selected { background: #fef2f2; border-color: #ef4444; color: #dc2626; }
+.cond-radio:hover:not(.selected) { background: #f8f9fa; border-color: #94a3b8; }
+
+/* Measuring points inputs */
+.puntos-section { border: 1px solid var(--color-border); border-radius: 8px; padding: 0.75rem; }
+.puntos-section-title { font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary); margin-bottom: 0.625rem; }
+.optional { font-weight: 400; color: var(--color-text-muted); font-style: italic; margin-left: 0.25rem; }
+.puntos-inputs { display: flex; flex-direction: column; gap: 0.5rem; }
+.punto-input-row { display: flex; align-items: center; gap: 0.5rem; }
+.punto-input-label { flex: 1; font-size: 0.8125rem; color: var(--color-text-secondary); }
+.punto-input-unit { font-size: 0.7rem; color: var(--color-text-muted); margin-left: 0.25rem; }
+.punto-input { width: 100px; padding: 0.25rem 0.5rem; border: 1px solid var(--color-border); border-radius: 5px; font-size: 0.875rem; text-align: right; flex-shrink: 0; }
+.punto-input:focus { outline: none; border-color: var(--color-brand); }
+
 .error-alert { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8125rem; }
 
 .btn-sm { padding: 0.25rem 0.75rem; font-size: 0.8125rem; }
