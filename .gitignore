@@ -11,3 +11,4 @@ tmp/
 apps/web/dist/
 apps/api/dist/
 data/
+.env.production
