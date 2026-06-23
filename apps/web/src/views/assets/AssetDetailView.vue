@@ -136,6 +136,72 @@
         </div>
       </div>
     </div>
+
+    <!-- Archivos tab -->
+    <div v-if="activeTab === 'archivos'" class="archivos-tab">
+      <div class="archivos-toolbar">
+        <div class="upload-group" v-if="canWrite">
+          <label class="upload-label">
+            <input type="file" multiple data-tipo="manual" @change="handleArchivoUpload" :disabled="uploadingFile" />
+            <span>{{ uploadingFile ? 'Subiendo…' : '+ Manual / Plano' }}</span>
+          </label>
+          <label class="upload-label">
+            <input type="file" accept="image/*" multiple data-tipo="foto" @change="handleArchivoUpload" :disabled="uploadingFile" />
+            <span>+ Foto</span>
+          </label>
+          <label class="upload-label">
+            <input type="file" multiple data-tipo="otro" @change="handleArchivoUpload" :disabled="uploadingFile" />
+            <span>+ Otro</span>
+          </label>
+        </div>
+      </div>
+
+      <div v-if="!archivos.length" class="card empty-state">No hay archivos adjuntos para este activo.</div>
+      <div v-else class="card">
+        <div v-for="a in archivos" :key="a.id" class="archivo-row">
+          <div class="archivo-icon">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h8l4 4v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M12 3v4h4"/></svg>
+          </div>
+          <div class="archivo-info">
+            <span class="archivo-nombre">{{ a.nombre_original }}</span>
+            <span class="archivo-meta">{{ a.tipo }} · {{ formatBytes(a.size_bytes) }} · {{ formatDate(a.created_at) }}</span>
+            <span class="archivo-desc" v-if="a.descripcion">{{ a.descripcion }}</span>
+          </div>
+          <button class="btn btn-secondary btn-sm" @click="downloadArchivo(a)">Descargar</button>
+          <button v-if="canWrite" class="btn-del" @click="deleteArchivo(a)" title="Eliminar">✕</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Campos adicionales tab -->
+    <div v-if="activeTab === 'campos'" class="campos-tab">
+      <div class="campos-toolbar">
+        <button v-if="!camposEditing && canWrite" class="btn btn-secondary btn-sm" @click="camposEditing = true">Editar</button>
+        <template v-if="camposEditing">
+          <button class="btn btn-primary btn-sm" :disabled="camposSaving" @click="saveCampos">{{ camposSaving ? 'Guardando…' : 'Guardar' }}</button>
+          <button class="btn btn-secondary btn-sm" @click="camposEditing = false; loadCampos()">Cancelar</button>
+        </template>
+      </div>
+
+      <div v-if="!campos.length" class="card empty-state">
+        No hay campos adicionales definidos. Un administrador puede crearlos en la configuración del sistema.
+      </div>
+      <div v-else class="card campos-grid">
+        <div v-for="c in campos" :key="c.id" class="campo-item">
+          <div class="campo-label">{{ c.nombre }}</div>
+          <template v-if="camposEditing">
+            <input v-if="c.tipo === 'texto'" v-model="camposFormValues[c.id]" class="input campo-input" />
+            <input v-else-if="c.tipo === 'numero'" type="number" v-model="camposFormValues[c.id]" class="input campo-input" step="any" />
+            <input v-else-if="c.tipo === 'fecha'" type="date" v-model="camposFormValues[c.id]" class="input campo-input" />
+            <select v-else-if="c.tipo === 'dropdown'" v-model="camposFormValues[c.id]" class="input campo-input">
+              <option value="">— Seleccionar —</option>
+              <option v-for="op in (c.opciones || [])" :key="op" :value="op">{{ op }}</option>
+            </select>
+          </template>
+          <div v-else class="campo-valor">{{ c.valor || '—' }}</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div v-else-if="loading" class="loading-box"><div class="spinner"></div></div>
@@ -185,6 +251,16 @@ const compForm = reactive({
   descripcion: '',
 })
 
+// Archivos
+const archivos = ref([])
+const uploadingFile = ref(false)
+
+// Campos extra
+const campos = ref([])
+const camposSaving = ref(false)
+const camposEditing = ref(false)
+const camposFormValues = ref({})
+
 const canWrite = computed(() => ['admin', 'ingeniero_confiabilidad', 'supervisor'].includes(auth.user?.role))
 
 const ESTADO_LABELS = { bueno: 'Bueno', alerta: 'Alerta', critico: 'Crítico', desconocido: 'Sin datos' }
@@ -200,6 +276,8 @@ const tabs = [
   { key: 'info', label: 'Información General' },
   { key: 'mediciones', label: 'Mediciones' },
   { key: 'componentes', label: 'Componentes' },
+  { key: 'archivos', label: 'Archivos' },
+  { key: 'campos', label: 'Campos Adicionales' },
 ]
 
 const puntosWithHealth = computed(() =>
@@ -251,11 +329,79 @@ async function submitComponente() {
 
 async function onEditSaved(updated) {
   editOpen.value = false
-  // Reload asset data with updated fields
   try {
     const { data } = await api.get(`/assets/${route.params.id}`)
     asset.value = data.activo
   } catch { /* ignore */ }
+}
+
+async function loadArchivos() {
+  try {
+    const { data } = await api.get(`/assets/${route.params.id}/archivos`)
+    archivos.value = data.archivos
+  } catch { /* ignore */ }
+}
+
+async function handleArchivoUpload(e) {
+  const files = Array.from(e.target.files)
+  if (!files.length) return
+  uploadingFile.value = true
+  try {
+    for (const file of files) {
+      const fd = new FormData()
+      fd.append('archivo', file)
+      fd.append('tipo', e.target.dataset.tipo || 'otro')
+      const { data } = await api.post(`/assets/${route.params.id}/archivos`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      archivos.value.unshift(data.archivo)
+    }
+  } finally {
+    uploadingFile.value = false
+    e.target.value = ''
+  }
+}
+
+async function downloadArchivo(archivo) {
+  try {
+    const { data } = await api.get(`/assets/${route.params.id}/archivos/${archivo.id}/download`)
+    window.open(data.url, '_blank')
+  } catch { alert('Error al generar el enlace de descarga') }
+}
+
+async function deleteArchivo(archivo) {
+  if (!confirm(`¿Eliminar "${archivo.nombre_original}"?`)) return
+  try {
+    await api.delete(`/assets/${route.params.id}/archivos/${archivo.id}`)
+    archivos.value = archivos.value.filter((a) => a.id !== archivo.id)
+  } catch { alert('Error al eliminar el archivo') }
+}
+
+async function loadCampos() {
+  try {
+    const { data } = await api.get(`/assets/${route.params.id}/campos-extra`)
+    campos.value = data.campos
+    camposFormValues.value = {}
+    for (const c of data.campos) camposFormValues.value[c.id] = c.valor || ''
+  } catch { /* ignore */ }
+}
+
+async function saveCampos() {
+  camposSaving.value = true
+  try {
+    const valores = Object.entries(camposFormValues.value).map(([campo_id, valor]) => ({ campo_id, valor: valor || null }))
+    await api.put(`/assets/${route.params.id}/campos-extra`, { valores })
+    await loadCampos()
+    camposEditing.value = false
+  } catch { alert('Error al guardar los campos') }
+  finally { camposSaving.value = false }
+}
+
+function formatBytes(b) {
+  if (!b) return ''
+  if (b < 1024) return b + ' B'
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB'
+  return (b / (1024 * 1024)).toFixed(1) + ' MB'
 }
 
 onMounted(async () => {
@@ -268,7 +414,7 @@ onMounted(async () => {
     if (assetRes.status === 'fulfilled') asset.value = assetRes.value.data.activo
     if (puntosRes.status === 'fulfilled') puntos.value = puntosRes.value.data.puntos
     if (tiposRes.status === 'fulfilled') tiposComponente.value = tiposRes.value.data.tipos
-    await loadComponentes()
+    await Promise.allSettled([loadComponentes(), loadArchivos(), loadCampos()])
   } finally {
     loading.value = false
   }
@@ -384,4 +530,34 @@ onMounted(async () => {
 .input:focus { outline: none; border-color: var(--color-brand); }
 .mono { font-family: monospace; }
 .comp-form-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
+
+/* Archivos tab */
+.archivos-tab { display: flex; flex-direction: column; gap: 1rem; }
+.archivos-toolbar { display: flex; align-items: center; gap: 0.5rem; }
+.upload-group { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.upload-label {
+  display: inline-block; padding: 5px 12px;
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px;
+  font-size: 0.8125rem; color: #374151; cursor: pointer;
+}
+.upload-label:hover { background: #f3f4f6; }
+.upload-label input[type="file"] { display: none; }
+.archivo-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--color-border); }
+.archivo-row:last-child { border-bottom: none; }
+.archivo-icon { color: #9ca3af; flex-shrink: 0; }
+.archivo-info { flex: 1; }
+.archivo-nombre { display: block; font-size: 13px; font-weight: 500; color: #111827; }
+.archivo-meta { display: block; font-size: 11px; color: #9ca3af; text-transform: capitalize; }
+.archivo-desc { display: block; font-size: 11px; color: #6b7280; }
+.btn-del { background: none; border: none; color: #9ca3af; cursor: pointer; font-size: 16px; padding: 4px 8px; }
+.btn-del:hover { color: #dc2626; }
+
+/* Campos tab */
+.campos-tab { display: flex; flex-direction: column; gap: 1rem; }
+.campos-toolbar { display: flex; gap: 0.5rem; }
+.campos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; padding: 1.25rem; }
+.campo-item { display: flex; flex-direction: column; gap: 0.4rem; }
+.campo-label { font-size: 0.75rem; font-weight: 600; color: var(--color-text-secondary); }
+.campo-valor { font-size: 0.875rem; color: #111827; }
+.campo-input { padding: 0.4rem 0.75rem; border: 1px solid var(--color-border); border-radius: 6px; font-size: 0.8125rem; font-family: inherit; }
 </style>

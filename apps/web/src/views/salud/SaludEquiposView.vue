@@ -86,13 +86,16 @@
               v-for="row in filteredRows"
               :key="row.activo_id"
               class="matrix-row"
-              @click="goToActivo(row.activo_id)"
             >
               <td class="col-contrato">{{ row.contrato_nombre }}</td>
               <td class="col-planta">{{ row.planta_nombre }}</td>
               <td class="col-sistema">{{ row.sistema_nombre }}</td>
-              <td class="col-tag"><span class="tag-mono">{{ row.tag }}</span></td>
-              <td class="col-nombre">{{ row.nombre }}</td>
+              <td class="col-tag">
+                <span class="tag-mono tag-link" @click="goToActivo(row.activo_id)">{{ row.tag }}</span>
+              </td>
+              <td class="col-nombre">
+                <span class="nombre-link" @click="goToActivo(row.activo_id)">{{ row.nombre }}</span>
+              </td>
               <td class="col-crit">
                 <span class="crit-plain">{{ row.criticidad[0].toUpperCase() }}</span>
               </td>
@@ -105,6 +108,8 @@
                 :key="t.codigo"
                 class="col-tecnica"
                 :title="cellTitle(row, t)"
+                :class="{ 'cell-clickable': row.inspeccion_ids && row.inspeccion_ids[t.codigo] }"
+                @click="goToInspeccion(row, t)"
               >
                 <span
                   v-if="row.condiciones[t.codigo]"
@@ -233,6 +238,11 @@ function goToActivo(id) {
   router.push(`/activos/${id}`)
 }
 
+function goToInspeccion(row, t) {
+  const id = row.inspeccion_ids && row.inspeccion_ids[t.codigo]
+  if (id) router.push(`/inspecciones/${id}`)
+}
+
 async function loadContratos() {
   try {
     const { data } = await api.get('/assets/contratos')
@@ -349,8 +359,12 @@ onMounted(async () => {
   border-right: 1px solid var(--color-border);
   vertical-align: middle;
 }
-.matrix-row { cursor: pointer; transition: background 0.1s; }
+.matrix-row { transition: background 0.1s; }
 .matrix-row:hover { background: var(--color-bg); }
+.tag-link, .nombre-link { cursor: pointer; color: #1d4ed8; }
+.tag-link:hover, .nombre-link:hover { text-decoration: underline; }
+.cell-clickable { cursor: pointer; }
+.cell-clickable:hover .cond-cell { filter: brightness(0.92); }
 
 .col-contrato { min-width: 80px; font-weight: 600; font-size: 0.75rem; }
 .col-planta { min-width: 130px; font-size: 0.75rem; }

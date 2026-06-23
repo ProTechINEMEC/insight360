@@ -70,6 +70,17 @@ const routes = [
         meta: { roles: ['admin', 'ingeniero_confiabilidad', 'supervisor'] },
       },
       {
+        path: 'inspecciones/:id',
+        name: 'InspeccionDetail',
+        component: () => import('@/views/salud/InspeccionDetailView.vue'),
+      },
+      {
+        path: 'tecnicas',
+        name: 'TecnicasAdmin',
+        component: () => import('@/views/admin/TecnicasAdminView.vue'),
+        meta: { roles: ['admin', 'ingeniero_confiabilidad'] },
+      },
+      {
         path: 'admin',
         name: 'Admin',
         component: () => import('@/views/admin/AdminView.vue'),

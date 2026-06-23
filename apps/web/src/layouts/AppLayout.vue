@@ -12,6 +12,11 @@
       <nav class="topbar-nav">
         <RouterLink to="/activos/arbol" class="nav-link">Árbol de Equipos</RouterLink>
         <RouterLink to="/salud" class="nav-link">Salud de Equipos</RouterLink>
+        <RouterLink
+          v-if="['admin','ingeniero_confiabilidad'].includes(auth.user?.role)"
+          to="/tecnicas"
+          class="nav-link"
+        >Técnicas</RouterLink>
       </nav>
       <div class="topbar-right">
         <div class="user-menu" @click="userMenuOpen = !userMenuOpen" v-click-outside="() => userMenuOpen = false">

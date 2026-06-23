@@ -1,8 +1,12 @@
 const router = require('express').Router()
 const Joi = require('joi')
+const multer = require('multer')
 const { db, withRLS } = require('../db/knex')
 const { authenticate, authorize } = require('../middleware/auth')
 const { validate } = require('../middleware/validate')
+const { uploadFile, getPresignedUrl, deleteFile } = require('../services/minio')
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } })
 
 router.use(authenticate)
 
@@ -294,6 +298,222 @@ router.get('/tree/hierarchy', async (req, res) => {
     }
 
     res.json({ tree })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── Asset Attachments ──────────────────────────────────────────────────────
+
+const ADMIN_ROLES = ['admin', 'ingeniero_confiabilidad']
+
+// GET /api/v1/assets/:id/archivos
+router.get('/:id/archivos', async (req, res) => {
+  try {
+    const archivos = await db('cbm.activo_archivos')
+      .where({ activo_id: req.params.id })
+      .orderBy('created_at', 'desc')
+    res.json({ archivos })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/v1/assets/:id/archivos — upload file
+router.post('/:id/archivos', authorize(...WRITE_ROLES), upload.single('archivo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Archivo requerido' })
+
+  const tipo = req.body.tipo || 'otro'
+  const objectKey = `activos/${req.params.id}/${Date.now()}_${req.file.originalname}`
+
+  try {
+    const activo = await db('core.activos').where({ id: req.params.id }).first()
+    if (!activo) return res.status(404).json({ error: 'Activo no encontrado' })
+
+    await uploadFile(objectKey, req.file.buffer, req.file.mimetype)
+
+    const [archivo] = await db('cbm.activo_archivos').insert({
+      activo_id: req.params.id,
+      nombre_original: req.file.originalname,
+      object_key: objectKey,
+      content_type: req.file.mimetype,
+      size_bytes: req.file.size,
+      tipo,
+      descripcion: req.body.descripcion || null,
+      uploaded_by: req.user.id,
+    }).returning('*')
+
+    res.status(201).json({ archivo })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// GET /api/v1/assets/:id/archivos/:archivoId/download — presigned URL
+router.get('/:id/archivos/:archivoId/download', async (req, res) => {
+  try {
+    const archivo = await db('cbm.activo_archivos')
+      .where({ id: req.params.archivoId, activo_id: req.params.id })
+      .first()
+    if (!archivo) return res.status(404).json({ error: 'Archivo no encontrado' })
+
+    const url = await getPresignedUrl(archivo.object_key)
+    res.json({ url })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// DELETE /api/v1/assets/:id/archivos/:archivoId
+router.delete('/:id/archivos/:archivoId', authorize(...ADMIN_ROLES), async (req, res) => {
+  try {
+    const archivo = await db('cbm.activo_archivos')
+      .where({ id: req.params.archivoId, activo_id: req.params.id })
+      .first()
+    if (!archivo) return res.status(404).json({ error: 'Archivo no encontrado' })
+
+    await deleteFile(archivo.object_key)
+    await db('cbm.activo_archivos').where({ id: req.params.archivoId }).del()
+    res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── Custom Fields ──────────────────────────────────────────────────────────
+
+// GET /api/v1/assets/campos-extra/definiciones
+router.get('/campos-extra/definiciones', async (req, res) => {
+  try {
+    const definiciones = await db('cbm.campos_extra_definicion')
+      .where({ activo: true })
+      .orderBy('orden')
+    res.json({ definiciones })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/v1/assets/campos-extra/definiciones (admin)
+router.post('/campos-extra/definiciones', authorize(...ADMIN_ROLES), validate(Joi.object({
+  nombre: Joi.string().max(200).required(),
+  tipo: Joi.string().valid('texto', 'numero', 'fecha', 'dropdown').required(),
+  opciones: Joi.array().items(Joi.string()).when('tipo', {
+    is: 'dropdown', then: Joi.required(), otherwise: Joi.forbidden(),
+  }),
+  orden: Joi.number().integer().default(0),
+})), async (req, res) => {
+  try {
+    const payload = {
+      nombre: req.body.nombre,
+      tipo: req.body.tipo,
+      opciones: req.body.opciones ? JSON.stringify(req.body.opciones) : null,
+      orden: req.body.orden ?? 0,
+    }
+    const [definicion] = await db('cbm.campos_extra_definicion').insert(payload).returning('*')
+    res.status(201).json({ definicion })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// PUT /api/v1/assets/campos-extra/definiciones/:id (admin)
+router.put('/campos-extra/definiciones/:id', authorize(...ADMIN_ROLES), validate(Joi.object({
+  nombre: Joi.string().max(200),
+  tipo: Joi.string().valid('texto', 'numero', 'fecha', 'dropdown'),
+  opciones: Joi.array().items(Joi.string()).allow(null),
+  orden: Joi.number().integer(),
+  activo: Joi.boolean(),
+})), async (req, res) => {
+  try {
+    const payload = { ...req.body }
+    if (payload.opciones !== undefined) {
+      payload.opciones = payload.opciones ? JSON.stringify(payload.opciones) : null
+    }
+    const [definicion] = await db('cbm.campos_extra_definicion')
+      .where({ id: req.params.id })
+      .update(payload)
+      .returning('*')
+    if (!definicion) return res.status(404).json({ error: 'Campo no encontrado' })
+    res.json({ definicion })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// DELETE /api/v1/assets/campos-extra/definiciones/:id (admin)
+router.delete('/campos-extra/definiciones/:id', authorize(...ADMIN_ROLES), async (req, res) => {
+  try {
+    const [updated] = await db('cbm.campos_extra_definicion')
+      .where({ id: req.params.id })
+      .update({ activo: false })
+      .returning('id')
+    if (!updated) return res.status(404).json({ error: 'Campo no encontrado' })
+    res.json({ ok: true })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// GET /api/v1/assets/:id/campos-extra — values for a specific machine
+router.get('/:id/campos-extra', async (req, res) => {
+  try {
+    const definiciones = await db('cbm.campos_extra_definicion')
+      .where({ activo: true })
+      .orderBy('orden')
+
+    const valores = await db('cbm.activo_campos_extra')
+      .where({ activo_id: req.params.id })
+
+    const valorMap = {}
+    for (const v of valores) valorMap[v.campo_id] = v.valor
+
+    const campos = definiciones.map((d) => ({
+      ...d,
+      valor: valorMap[d.id] ?? null,
+    }))
+
+    res.json({ campos })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// PUT /api/v1/assets/:id/campos-extra — upsert values for a machine
+router.put('/:id/campos-extra', authorize(...WRITE_ROLES), validate(Joi.object({
+  valores: Joi.array().items(Joi.object({
+    campo_id: Joi.string().uuid().required(),
+    valor: Joi.string().allow('', null),
+  })).required(),
+})), async (req, res) => {
+  const { valores } = req.body
+  try {
+    const activo = await db('core.activos').where({ id: req.params.id }).first()
+    if (!activo) return res.status(404).json({ error: 'Activo no encontrado' })
+
+    const rows = valores.map((v) => ({
+      activo_id: req.params.id,
+      campo_id: v.campo_id,
+      valor: v.valor ?? null,
+      updated_at: new Date(),
+    }))
+
+    await db('cbm.activo_campos_extra')
+      .insert(rows)
+      .onConflict(['activo_id', 'campo_id'])
+      .merge()
+
+    res.json({ ok: true })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
