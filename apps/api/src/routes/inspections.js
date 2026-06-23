@@ -540,7 +540,7 @@ router.get('/resumen-activo', async (req, res) => {
     const componentes = await db('cbm.componentes as c')
       .leftJoin('cbm.tipos_componente as tc', 'c.tipo_componente_id', 'tc.id')
       .where({ 'c.activo_id': activo_id, 'c.activo': true })
-      .select('c.id', 'c.nombre', 'c.cmms_id', 'tc.codigo as tipo_codigo', 'tc.nombre as tipo_nombre')
+      .select('c.id', 'c.nombre', 'c.cmms_id', 'c.tipo_componente_id', 'tc.codigo as tipo_codigo', 'tc.nombre as tipo_nombre')
       .orderBy('c.nombre')
 
     const tecnicas = tecnicasAplicables.rows.map((t) => ({

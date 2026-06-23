@@ -240,6 +240,17 @@
               </div>
             </div>
 
+            <!-- Failure mode (optional, appears once technique is selected) -->
+            <div v-if="newInspModal.modos_falla.length" class="field">
+              <label>Modo de Falla <span class="optional">(opcional)</span></label>
+              <select v-model="newInspModal.modo_falla_id">
+                <option value="">Sin modo de falla identificado</option>
+                <option v-for="m in newInspModal.modos_falla" :key="m.id" :value="m.id">
+                  {{ m.modo_falla }}
+                </option>
+              </select>
+            </div>
+
             <div class="field-row-2">
               <div class="field">
                 <label>Estado Operacional *</label>
@@ -281,6 +292,20 @@
             <div class="field">
               <label>Observaciones</label>
               <textarea v-model="newInspModal.observaciones" rows="2" placeholder="Observaciones generales…"></textarea>
+            </div>
+
+            <div class="field">
+              <label>Adjuntos <span class="optional">(informes, fotos…)</span></label>
+              <label class="file-upload-btn">
+                <input type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg" @change="onArchivosChange" style="display:none" />
+                + Seleccionar archivos
+              </label>
+              <div v-if="newInspModal.archivos.length" class="file-list">
+                <div v-for="(f, i) in newInspModal.archivos" :key="i" class="file-item">
+                  <span class="file-name">{{ f.name }}</span>
+                  <span class="file-size">({{ (f.size / 1024).toFixed(0) }} KB)</span>
+                </div>
+              </div>
             </div>
 
             <div v-if="newInspModal.error" class="error-alert">{{ newInspModal.error }}</div>
@@ -381,15 +406,18 @@ const newInspModal = reactive({
   error: '',
   componentes: [],
   tecnicasDisponibles: [],
+  modos_falla: [],
   puntos: [],
   valores: {},
   componente_id: '',
   tecnica_id: '',
+  modo_falla_id: '',
   fecha: new Date().toISOString().slice(0, 16),
   analista: '',
   estado_operacional: 'operativo',
   condicion: '',
   observaciones: '',
+  archivos: [],
 })
 
 const canWrite = computed(() => ['admin', 'ingeniero_confiabilidad', 'supervisor', 'tecnico_campo'].includes(auth.user?.role))
@@ -498,7 +526,9 @@ async function openNewInspeccion() {
   newInspModal.open = true
   newInspModal.componente_id = ''
   newInspModal.tecnica_id = ''
+  newInspModal.modo_falla_id = ''
   newInspModal.tecnicasDisponibles = []
+  newInspModal.modos_falla = []
   newInspModal.puntos = []
   newInspModal.valores = {}
   newInspModal.condicion = ''
@@ -506,31 +536,42 @@ async function openNewInspeccion() {
   newInspModal.analista = auth.user ? `${auth.user.nombre} ${auth.user.apellido}`.trim() : ''
   newInspModal.fecha = new Date().toISOString().slice(0, 16)
   newInspModal.estado_operacional = 'operativo'
+  newInspModal.archivos = []
   newInspModal.error = ''
 }
 
 async function onComponenteChange() {
   newInspModal.tecnica_id = ''
   newInspModal.tecnicasDisponibles = []
+  newInspModal.modos_falla = []
+  newInspModal.modo_falla_id = ''
   newInspModal.puntos = []
   newInspModal.valores = {}
   if (!newInspModal.componente_id) return
-  // Get techniques applicable to this component's tipo
-  const comp = newInspModal.componentes.find((c) => c.id === newInspModal.componente_id)
-  if (!comp) return
-  // Use detailTecnicas (already loaded) as applicable tecnicas for this activo
-  // Filter to those that apply via the component's tipo (use all detailTecnicas for simplicity)
   newInspModal.tecnicasDisponibles = detailTecnicas.value
 }
 
 async function onTecnicaChange() {
   newInspModal.puntos = []
   newInspModal.valores = {}
+  newInspModal.modos_falla = []
+  newInspModal.modo_falla_id = ''
   if (!newInspModal.tecnica_id) return
+  const comp = newInspModal.componentes.find((c) => c.id === newInspModal.componente_id)
   try {
-    const { data } = await api.get('/inspections/puntos-tecnica', { params: { tecnica_id: newInspModal.tecnica_id } })
-    newInspModal.puntos = data.puntos
+    const [puntosRes, modosRes] = await Promise.all([
+      api.get('/inspections/puntos-tecnica', { params: { tecnica_id: newInspModal.tecnica_id } }),
+      comp?.tipo_componente_id
+        ? api.get('/inspections/modos-falla', { params: { tecnica_id: newInspModal.tecnica_id, tipo_componente_id: comp.tipo_componente_id } })
+        : Promise.resolve({ data: { modos: [] } }),
+    ])
+    newInspModal.puntos = puntosRes.data.puntos
+    newInspModal.modos_falla = modosRes.data.modos
   } catch { /* ignore */ }
+}
+
+function onArchivosChange(e) {
+  newInspModal.archivos = Array.from(e.target.files || [])
 }
 
 async function submitInspeccion() {
@@ -540,6 +581,7 @@ async function submitInspeccion() {
     const { data } = await api.post('/inspections/inspecciones', {
       componente_id: newInspModal.componente_id,
       tecnica_id: newInspModal.tecnica_id,
+      modo_falla_id: newInspModal.modo_falla_id || null,
       fecha: new Date(newInspModal.fecha).toISOString(),
       analista: newInspModal.analista || null,
       estado_operacional: newInspModal.estado_operacional,
@@ -547,17 +589,26 @@ async function submitInspeccion() {
       observaciones: newInspModal.observaciones || null,
     })
 
+    const inspId = data.inspeccion.id
+
     // Save measurement values if any were filled
     const mediciones = newInspModal.puntos
       .filter((p) => newInspModal.valores[p.id] !== undefined && newInspModal.valores[p.id] !== null && newInspModal.valores[p.id] !== '')
       .map((p) => ({ punto_id: p.id, valor: newInspModal.valores[p.id] }))
 
     if (mediciones.length) {
-      await api.put(`/inspections/inspecciones/${data.inspeccion.id}/mediciones`, { mediciones })
+      await api.put(`/inspections/inspecciones/${inspId}/mediciones`, { mediciones })
+    }
+
+    // Upload attached files
+    for (const file of newInspModal.archivos) {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('tipo', 'informe')
+      await api.post(`/inspections/inspecciones/${inspId}/archivos`, fd)
     }
 
     newInspModal.open = false
-    // Refresh detail panel
     const refreshed = await api.get('/inspections/resumen-activo', { params: { activo_id: selectedActivoId.value } })
     detailTecnicas.value = refreshed.data.tecnicas
   } catch (err) {
@@ -781,6 +832,17 @@ onMounted(loadTree)
 .punto-input-unit { font-size: 0.7rem; color: var(--color-text-muted); margin-left: 0.25rem; }
 .punto-input { width: 100px; padding: 0.25rem 0.5rem; border: 1px solid var(--color-border); border-radius: 5px; font-size: 0.875rem; text-align: right; flex-shrink: 0; }
 .punto-input:focus { outline: none; border-color: var(--color-brand); }
+
+.file-upload-btn {
+  display: inline-block; padding: 0.375rem 0.75rem; border: 1.5px dashed var(--color-border);
+  border-radius: 6px; font-size: 0.8125rem; cursor: pointer; color: var(--color-brand);
+  transition: background 0.1s; margin-top: 0.25rem;
+}
+.file-upload-btn:hover { background: #eff6ff; border-color: var(--color-brand); }
+.file-list { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem; }
+.file-item { display: flex; gap: 0.5rem; align-items: baseline; font-size: 0.8125rem; }
+.file-name { font-weight: 500; }
+.file-size { color: var(--color-text-muted); font-size: 0.75rem; }
 
 .error-alert { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8125rem; }
 
