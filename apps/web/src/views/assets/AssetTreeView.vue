@@ -24,19 +24,7 @@
             @click="toggleFilter('criticidad', c.key)"
           >{{ c.label }}</button>
         </div>
-        <div class="filter-chips">
-          <span class="filter-label">Salud:</span>
-          <button
-            v-for="h in ESTADOS"
-            :key="h.key"
-            :class="['chip', `chip-health-${h.key}`, { active: filters.salud.includes(h.key) }]"
-            @click="toggleFilter('salud', h.key)"
-          >{{ h.label }}</button>
-        </div>
         <div class="view-toggles">
-          <button :class="['toggle-btn', { active: showScore }]" @click="showScore = !showScore" title="Mostrar score">
-            123
-          </button>
           <button class="toggle-btn" @click="expandAll(true)" title="Expandir todo">⊞</button>
           <button class="toggle-btn" @click="expandAll(false)" title="Colapsar todo">⊟</button>
         </div>
@@ -54,68 +42,69 @@
         </div>
 
         <template v-else>
-          <div v-for="planta in filteredTree" :key="planta.id" class="tree-planta">
-            <!-- Planta row -->
-            <div class="tree-row tree-row-planta" @click="toggleNode('planta', planta.id)">
-              <span class="expand-icon">{{ expandedNodes.plantas.has(planta.id) ? '▼' : '▶' }}</span>
-              <span class="node-icon">🏭</span>
-              <span class="node-label">{{ planta.nombre }}</span>
-              <span class="node-code">{{ planta.codigo }}</span>
+          <div v-for="contrato in filteredTree" :key="contrato.id || 'sin-contrato'" class="tree-contrato">
+            <!-- Contrato row -->
+            <div class="tree-row tree-row-contrato" @click="toggleNode('contrato', contrato.id)">
+              <span class="expand-icon">{{ expandedNodes.contratos.has(contrato.id) ? '▼' : '▶' }}</span>
+              <span class="node-icon">📋</span>
+              <span class="node-label">{{ contrato.nombre }}</span>
               <div class="node-badges">
-                <span class="count-badge">{{ planta._activoCount }} activos</span>
-                <div class="health-summary" v-if="planta._health">
-                  <span v-if="planta._health.critico > 0" class="health-dot dot-critico">{{ planta._health.critico }}</span>
-                  <span v-if="planta._health.alerta > 0" class="health-dot dot-alerta">{{ planta._health.alerta }}</span>
-                  <span v-if="planta._health.bueno > 0" class="health-dot dot-bueno">{{ planta._health.bueno }}</span>
-                </div>
+                <span class="count-badge">{{ contrato._activoCount }} activos</span>
               </div>
             </div>
 
-            <!-- Sistemas -->
-            <div v-if="expandedNodes.plantas.has(planta.id)">
-              <div v-for="sistema in planta.sistemas" :key="sistema.id" class="tree-sistema">
-                <div class="tree-row tree-row-sistema" @click="toggleNode('sistema', sistema.id)">
+            <!-- Plantas -->
+            <div v-if="expandedNodes.contratos.has(contrato.id)">
+              <div v-for="planta in contrato.plantas" :key="planta.id" class="tree-planta">
+                <div class="tree-row tree-row-planta" @click="toggleNode('planta', planta.id)">
                   <span class="indent-1"></span>
-                  <span class="expand-icon">{{ expandedNodes.sistemas.has(sistema.id) ? '▼' : '▶' }}</span>
-                  <span class="node-icon">⚙️</span>
-                  <span class="node-label">{{ sistema.nombre }}</span>
-                  <span class="node-code">{{ sistema.codigo }}</span>
+                  <span class="expand-icon">{{ expandedNodes.plantas.has(planta.id) ? '▼' : '▶' }}</span>
+                  <span class="node-icon">🏭</span>
+                  <span class="node-label">{{ planta.nombre }}</span>
+                  <span class="node-code">{{ planta.codigo }}</span>
                   <div class="node-badges">
-                    <span class="count-badge">{{ sistema.activos.length }}</span>
+                    <span class="count-badge">{{ planta._activoCount }} activos</span>
                   </div>
                 </div>
 
-                <!-- Activos -->
-                <div v-if="expandedNodes.sistemas.has(sistema.id)">
-                  <div
-                    v-for="activo in sistema.activos"
-                    :key="activo.id"
-                    :class="['tree-row', 'tree-row-activo', `crit-${activo.criticidad}`, { selected: selectedActivoId === activo.id, match: !!search && isMatch(activo) }]"
-                    @click="selectActivo(activo)"
-                  >
-                    <span class="indent-2"></span>
-                    <span class="crit-bar"></span>
-                    <span class="node-icon activo-icon">■</span>
-                    <div class="activo-info">
-                      <span class="activo-tag">{{ activo.tag }}</span>
-                      <span class="activo-name">{{ activo.nombre }}</span>
+                <!-- Sistemas -->
+                <div v-if="expandedNodes.plantas.has(planta.id)">
+                  <div v-for="sistema in planta.sistemas" :key="sistema.id" class="tree-sistema">
+                    <div class="tree-row tree-row-sistema" @click="toggleNode('sistema', sistema.id)">
+                      <span class="indent-2"></span>
+                      <span class="expand-icon">{{ expandedNodes.sistemas.has(sistema.id) ? '▼' : '▶' }}</span>
+                      <span class="node-icon">⚙️</span>
+                      <span class="node-label">{{ sistema.nombre }}</span>
+                      <span class="node-code">{{ sistema.codigo }}</span>
+                      <div class="node-badges">
+                        <span class="count-badge">{{ sistema.activos.length }}</span>
+                      </div>
                     </div>
-                    <div class="activo-right">
-                      <div v-if="healthMap[activo.id]" class="health-indicator">
-                        <span :class="`health-dot dot-${healthMap[activo.id].estado}`"></span>
-                        <span v-if="showScore && healthMap[activo.id].score !== null" class="health-score-small">
-                          {{ healthMap[activo.id].score }}
-                        </span>
+
+                    <!-- Activos -->
+                    <div v-if="expandedNodes.sistemas.has(sistema.id)">
+                      <div
+                        v-for="activo in sistema.activos"
+                        :key="activo.id"
+                        :class="['tree-row', 'tree-row-activo', `crit-${activo.criticidad}`, { selected: selectedActivoId === activo.id, match: !!search && isMatch(activo) }]"
+                        @click="selectActivo(activo)"
+                      >
+                        <span class="indent-3"></span>
+                        <span class="crit-bar"></span>
+                        <span class="node-icon activo-icon">■</span>
+                        <div class="activo-info">
+                          <span class="activo-tag">{{ activo.tag }}</span>
+                          <span class="activo-name">{{ activo.nombre }}</span>
+                        </div>
+                        <div class="activo-right">
+                          <button
+                            v-if="canWrite"
+                            class="quick-add-btn"
+                            :title="`Registrar lectura en ${activo.tag}`"
+                            @click.stop="openQuickReading(activo)"
+                          >+</button>
+                        </div>
                       </div>
-                      <div v-else class="health-indicator">
-                        <span class="health-dot dot-desconocido"></span>
-                      </div>
-                      <button
-                        v-if="canWrite"
-                        class="quick-add-btn"
-                        :title="`Registrar lectura en ${activo.tag}`"
-                        @click.stop="openQuickReading(activo)"
-                      >+</button>
                     </div>
                   </div>
                 </div>
@@ -139,12 +128,6 @@
             </div>
             <div class="detail-badges">
               <span :class="`badge badge-${selectedActivo.criticidad}`">{{ selectedActivo.criticidad }}</span>
-              <template v-if="selectedHealth">
-                <span :class="`health-chip health-${selectedHealth.estado}`">
-                  {{ ESTADO_LABELS[selectedHealth.estado] }}
-                  <template v-if="selectedHealth.score !== null"> · {{ selectedHealth.score }}/100</template>
-                </span>
-              </template>
             </div>
           </div>
 
@@ -287,29 +270,22 @@ const CRITICIDADES = [
   { key: 'esencial', label: 'Esencial' },
   { key: 'general', label: 'General' },
 ]
-const ESTADOS = [
-  { key: 'critico', label: 'Crítico' },
-  { key: 'alerta', label: 'Alerta' },
-  { key: 'bueno', label: 'Bueno' },
-  { key: 'desconocido', label: 'Sin datos' },
-]
-const ESTADO_LABELS = { bueno: 'Bueno', alerta: 'Alerta', critico: 'Crítico', desconocido: 'Sin datos' }
+const ESTADO_LABELS = { bueno: 'Bueno', alerta: 'Alerta', critico: 'Crítico', desconocido: 'Sin datos' }  // still used by puntos section
 
 // State
-const rawTree = ref([])   // full hierarchy from API
-const healthMap = ref({}) // activo_id -> { estado, score }
+const rawTree = ref([])   // full hierarchy from API (contratos → plantas → sistemas → activos)
 const loadingTree = ref(true)
 const search = ref('')
-const showScore = ref(true)
 const selectedActivoId = ref(null)
 const selectedActivo = ref(null)
 const detailPuntos = ref([])
 const loadingDetail = ref(false)
 const chartPunto = ref(null)
 
-const filters = reactive({ criticidad: [], salud: [] })
+const filters = reactive({ criticidad: [] })
 
 const expandedNodes = reactive({
+  contratos: new Set(),
   plantas: new Set(),
   sistemas: new Set(),
 })
@@ -325,44 +301,41 @@ const qrSubmitting = ref(false)
 const qrError = ref('')
 
 const canWrite = computed(() => ['admin', 'ingeniero_confiabilidad', 'supervisor', 'tecnico_campo'].includes(auth.user?.role))
-const hasActiveFilters = computed(() => search.value || filters.criticidad.length || filters.salud.length)
-
-const selectedHealth = computed(() => selectedActivoId.value ? healthMap.value[selectedActivoId.value] : null)
+const hasActiveFilters = computed(() => search.value || filters.criticidad.length)
 
 const qrSelectedPunto = computed(() => quickPuntos.value.find((p) => p.id === qrPuntoId.value) || null)
 
 // Filter + search logic
 const filteredTree = computed(() => {
   return rawTree.value
-    .map((planta) => {
-      const sistemas = planta.sistemas
-        .map((sistema) => {
-          const activos = sistema.activos.filter((a) => {
-            if (filters.criticidad.length && !filters.criticidad.includes(a.criticidad)) return false
-            const h = healthMap.value[a.id]?.estado || 'desconocido'
-            if (filters.salud.length && !filters.salud.includes(h)) return false
-            if (search.value) {
-              const q = search.value.toLowerCase()
-              return a.tag.toLowerCase().includes(q) ||
-                a.nombre.toLowerCase().includes(q) ||
-                (a.codigo_sap || '').toLowerCase().includes(q)
-            }
-            return true
-          })
-          return { ...sistema, activos }
+    .map((contrato) => {
+      const plantas = contrato.plantas
+        .map((planta) => {
+          const sistemas = planta.sistemas
+            .map((sistema) => {
+              const activos = sistema.activos.filter((a) => {
+                if (filters.criticidad.length && !filters.criticidad.includes(a.criticidad)) return false
+                if (search.value) {
+                  const q = search.value.toLowerCase()
+                  return a.tag.toLowerCase().includes(q) ||
+                    a.nombre.toLowerCase().includes(q) ||
+                    (a.codigo_sap || '').toLowerCase().includes(q)
+                }
+                return true
+              })
+              return { ...sistema, activos }
+            })
+            .filter((s) => s.activos.length)
+
+          const activoCount = sistemas.reduce((n, s) => n + s.activos.length, 0)
+          return { ...planta, sistemas, _activoCount: activoCount }
         })
-        .filter((s) => s.activos.length)
+        .filter((p) => p._activoCount > 0)
 
-      const activoCount = sistemas.reduce((n, s) => n + s.activos.length, 0)
-      const health = { critico: 0, alerta: 0, bueno: 0 }
-      sistemas.forEach((s) => s.activos.forEach((a) => {
-        const h = healthMap.value[a.id]?.estado
-        if (h && h !== 'desconocido') health[h]++
-      }))
-
-      return { ...planta, sistemas, _activoCount: activoCount, _health: health }
+      const activoCount = plantas.reduce((n, p) => n + p._activoCount, 0)
+      return { ...contrato, plantas, _activoCount: activoCount }
     })
-    .filter((p) => p._activoCount > 0)
+    .filter((ct) => ct._activoCount > 0)
 })
 
 function isMatch(activo) {
@@ -382,23 +355,27 @@ function toggleFilter(type, val) {
 
 function clearFilters() {
   filters.criticidad = []
-  filters.salud = []
   search.value = ''
 }
 
 function toggleNode(type, id) {
-  const set = expandedNodes[type === 'planta' ? 'plantas' : 'sistemas']
+  const setMap = { contrato: 'contratos', planta: 'plantas', sistema: 'sistemas' }
+  const set = expandedNodes[setMap[type]]
   if (set.has(id)) set.delete(id)
   else set.add(id)
 }
 
 function expandAll(open) {
-  rawTree.value.forEach((p) => {
-    if (open) expandedNodes.plantas.add(p.id)
-    else expandedNodes.plantas.delete(p.id)
-    p.sistemas.forEach((s) => {
-      if (open) expandedNodes.sistemas.add(s.id)
-      else expandedNodes.sistemas.delete(s.id)
+  rawTree.value.forEach((ct) => {
+    if (open) expandedNodes.contratos.add(ct.id)
+    else expandedNodes.contratos.delete(ct.id)
+    ct.plantas.forEach((p) => {
+      if (open) expandedNodes.plantas.add(p.id)
+      else expandedNodes.plantas.delete(p.id)
+      p.sistemas.forEach((s) => {
+        if (open) expandedNodes.sistemas.add(s.id)
+        else expandedNodes.sistemas.delete(s.id)
+      })
     })
   })
 }
@@ -488,25 +465,16 @@ async function loadTree() {
     const { data } = await api.get('/assets/tree/hierarchy')
     rawTree.value = data.tree
 
-    // Expand first planta and all its sistemas by default
+    // Auto-expand first contrato + its first planta + all its sistemas
     if (data.tree.length) {
-      expandedNodes.plantas.add(data.tree[0].id)
-      data.tree[0].sistemas.forEach((s) => expandedNodes.sistemas.add(s.id))
-    }
-
-    // Load health for all activos
-    const allActivos = data.tree.flatMap((p) => p.sistemas.flatMap((s) => s.activos))
-    const healthResults = await Promise.allSettled(
-      allActivos.map((a) => api.get(`/health/asset/${a.id}`))
-    )
-    const map = {}
-    healthResults.forEach((r) => {
-      if (r.status === 'fulfilled') {
-        const d = r.value.data
-        map[d.activo_id] = d
+      const firstContrato = data.tree[0]
+      expandedNodes.contratos.add(firstContrato.id)
+      if (firstContrato.plantas?.length) {
+        const firstPlanta = firstContrato.plantas[0]
+        expandedNodes.plantas.add(firstPlanta.id)
+        firstPlanta.sistemas?.forEach((s) => expandedNodes.sistemas.add(s.id))
       }
-    })
-    healthMap.value = map
+    }
   } finally {
     loadingTree.value = false
   }
@@ -515,14 +483,17 @@ async function loadTree() {
 // Auto-expand search matches
 watch(search, (q) => {
   if (!q) return
-  rawTree.value.forEach((p) => {
-    const plantaHasMatch = p.sistemas.some((s) => s.activos.some((a) => isMatch(a)))
-    if (plantaHasMatch) {
-      expandedNodes.plantas.add(p.id)
-      p.sistemas.forEach((s) => {
-        if (s.activos.some((a) => isMatch(a))) expandedNodes.sistemas.add(s.id)
-      })
-    }
+  rawTree.value.forEach((ct) => {
+    ct.plantas?.forEach((p) => {
+      const plantaHasMatch = p.sistemas?.some((s) => s.activos?.some((a) => isMatch(a)))
+      if (plantaHasMatch) {
+        expandedNodes.contratos.add(ct.id)
+        expandedNodes.plantas.add(p.id)
+        p.sistemas.forEach((s) => {
+          if (s.activos.some((a) => isMatch(a))) expandedNodes.sistemas.add(s.id)
+        })
+      }
+    })
   })
 })
 
@@ -575,6 +546,7 @@ onMounted(loadTree)
 }
 .tree-row:hover { background: var(--color-bg); }
 
+.tree-row-contrato { font-weight: 800; font-size: 1rem; color: var(--color-text-primary); background: var(--color-bg); border-bottom: 1px solid var(--color-border); }
 .tree-row-planta { font-weight: 700; font-size: 0.9375rem; }
 .tree-row-sistema { font-weight: 600; font-size: 0.875rem; color: var(--color-text-secondary); }
 .tree-row-activo { font-size: 0.8125rem; }
@@ -587,6 +559,7 @@ onMounted(loadTree)
 
 .indent-1 { width: 20px; flex-shrink: 0; }
 .indent-2 { width: 40px; flex-shrink: 0; }
+.indent-3 { width: 60px; flex-shrink: 0; }
 
 /* Crit bar on activo rows */
 .crit-bar { width: 3px; height: 28px; border-radius: 2px; flex-shrink: 0; background: var(--color-border); }
@@ -601,19 +574,7 @@ onMounted(loadTree)
 
 .activo-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 
-.health-indicator { display: flex; align-items: center; gap: 0.25rem; }
-.health-score-small { font-size: 0.7rem; color: var(--color-text-muted); }
-
-/* Health dots */
-.health-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.6rem; color: #fff; font-weight: 700; }
-.health-summary .health-dot { width: 18px; height: 18px; font-size: 0.65rem; }
-.dot-bueno { background: #16a34a; }
-.dot-alerta { background: #d97706; }
-.dot-critico { background: #dc2626; }
-.dot-desconocido { background: #d1d5db; }
-
 .count-badge { font-size: 0.7rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; padding: 0 6px; color: var(--color-text-muted); }
-.health-summary { display: flex; gap: 3px; }
 
 .quick-add-btn {
   width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--color-border);
@@ -637,11 +598,6 @@ onMounted(loadTree)
 .detail-meta { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.125rem; }
 .detail-badges { display: flex; flex-direction: column; gap: 0.375rem; align-items: flex-end; }
 
-.health-chip { padding: 3px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; display: inline-block; }
-.health-chip.health-bueno { background: #f0fdf4; color: #16a34a; }
-.health-chip.health-alerta { background: #fffbeb; color: #d97706; }
-.health-chip.health-critico { background: #fef2f2; color: #dc2626; }
-.health-chip.health-desconocido { background: var(--color-bg); color: var(--color-text-muted); }
 
 .detail-section-title { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.625rem; }
 .detail-loading, .detail-empty { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.5rem; color: var(--color-text-muted); font-size: 0.875rem; }

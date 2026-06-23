@@ -9,6 +9,10 @@
           <span class="brand-sub">Ecopetrol · GGS</span>
         </div>
       </div>
+      <nav class="topbar-nav">
+        <RouterLink to="/activos/arbol" class="nav-link">Árbol de Equipos</RouterLink>
+        <RouterLink to="/salud" class="nav-link">Salud de Equipos</RouterLink>
+      </nav>
       <div class="topbar-right">
         <div class="user-menu" @click="userMenuOpen = !userMenuOpen" v-click-outside="() => userMenuOpen = false">
           <div class="user-avatar">{{ userInitials }}</div>
@@ -32,6 +36,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -110,6 +115,34 @@ const roleLabel = computed(() => ROLE_LABELS[auth.user?.role] || auth.user?.role
   font-size: 0.7rem;
   color: rgba(255,255,255,0.5);
   letter-spacing: 0.04em;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  padding: 0 1.5rem;
+}
+
+.nav-link {
+  padding: 0.3rem 0.875rem;
+  border-radius: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: rgba(255,255,255,0.65);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover {
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.9);
+}
+
+.nav-link.router-link-active {
+  background: rgba(255,255,255,0.12);
+  color: #fff;
 }
 
 .topbar-right {

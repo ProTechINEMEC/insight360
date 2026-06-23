@@ -9,6 +9,19 @@ router.use(authenticate)
 const CRITICIDADES = ['critico', 'esencial', 'general']
 const WRITE_ROLES = ['admin', 'ingeniero_confiabilidad', 'supervisor']
 
+// ─── Contracts ─────────────────────────────────────────────────────────────
+
+// GET /api/v1/assets/contratos
+router.get('/contratos', async (req, res) => {
+  try {
+    const contratos = await db('core.contratos').where({ activo: true }).orderBy('nombre')
+    res.json({ contratos })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── Plants ────────────────────────────────────────────────────────────────
 
 // GET /api/v1/assets/plantas
@@ -33,6 +46,21 @@ router.post('/plantas', authorize(...WRITE_ROLES), validate(Joi.object({
     res.status(201).json({ planta })
   } catch (err) {
     if (err.constraint) return res.status(409).json({ error: 'Código de planta ya existe' })
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// ─── Areas ─────────────────────────────────────────────────────────────────
+
+// GET /api/v1/assets/areas?sistema_id=
+router.get('/areas', async (req, res) => {
+  try {
+    const query = db('core.areas').where({ activo: true }).orderBy('nombre')
+    if (req.query.sistema_id) query.where({ sistema_id: req.query.sistema_id })
+    const areas = await query
+    res.json({ areas })
+  } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
   }
@@ -179,25 +207,50 @@ router.put('/:id', authorize(...WRITE_ROLES), validate(Joi.object({
   }
 })
 
-// GET /api/v1/assets/tree — hierarchical structure for sidebar
+// GET /api/v1/assets/tree — hierarchical structure (contrato → planta → sistema → activo)
 router.get('/tree/hierarchy', async (req, res) => {
   try {
+    const contratos = await db('core.contratos').where({ activo: true }).orderBy('nombre')
     const plantas = await db('core.plantas').where({ activo: true }).orderBy('nombre')
     const sistemas = await db('core.sistemas').where({ activo: true }).orderBy('nombre')
     const activos = await db('core.activos')
       .where({ activo: true })
-      .select('id', 'sistema_id', 'tag', 'nombre', 'criticidad')
-      .orderBy('nombre')
+      .select('id', 'sistema_id', 'tag', 'nombre', 'criticidad', 'codigo_sap', 'area_id')
+      .orderBy('tag')
 
-    const tree = plantas.map((p) => ({
-      ...p,
-      sistemas: sistemas
-        .filter((s) => s.planta_id === p.id)
-        .map((s) => ({
-          ...s,
-          activos: activos.filter((a) => a.sistema_id === s.id),
+    // Plantas without a contrato (legacy) get grouped under a virtual "Sin contrato" entry
+    const tree = contratos.map((ct) => ({
+      ...ct,
+      plantas: plantas
+        .filter((p) => p.contrato_id === ct.id)
+        .map((p) => ({
+          ...p,
+          sistemas: sistemas
+            .filter((s) => s.planta_id === p.id)
+            .map((s) => ({
+              ...s,
+              activos: activos.filter((a) => a.sistema_id === s.id),
+            })),
         })),
     }))
+
+    // Include plantas with no contrato (shouldn't happen after migration, but defensive)
+    const sinContrato = plantas.filter((p) => !p.contrato_id)
+    if (sinContrato.length) {
+      tree.push({
+        id: null,
+        nombre: 'Sin Contrato',
+        plantas: sinContrato.map((p) => ({
+          ...p,
+          sistemas: sistemas
+            .filter((s) => s.planta_id === p.id)
+            .map((s) => ({
+              ...s,
+              activos: activos.filter((a) => a.sistema_id === s.id),
+            })),
+        })),
+      })
+    }
 
     res.json({ tree })
   } catch (err) {

@@ -37,6 +37,11 @@ const routes = [
         component: () => import('@/views/assets/AssetTreeView.vue'),
       },
       {
+        path: 'salud',
+        name: 'SaludEquipos',
+        component: () => import('@/views/salud/SaludEquiposView.vue'),
+      },
+      {
         path: 'activos/:id',
         name: 'AssetDetail',
         component: () => import('@/views/assets/AssetDetailView.vue'),
