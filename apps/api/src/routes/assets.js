@@ -7,6 +7,7 @@ const { validate } = require('../middleware/validate')
 router.use(authenticate)
 
 const CRITICIDADES = ['critico', 'esencial', 'general']
+const ESTADOS_OP = ['operativo', 'operativo_limitado', 'stand_by', 'fuera_de_servicio', 'dado_de_baja']
 const WRITE_ROLES = ['admin', 'ingeniero_confiabilidad', 'supervisor']
 
 // ─── Contracts ─────────────────────────────────────────────────────────────
@@ -17,6 +18,24 @@ router.get('/contratos', async (req, res) => {
     const contratos = await db('core.contratos').where({ activo: true }).orderBy('nombre')
     res.json({ contratos })
   } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/v1/assets/contratos
+router.post('/contratos', authorize('admin'), validate(Joi.object({
+  nombre: Joi.string().max(200).required(),
+  numero_contrato: Joi.string().max(100).allow('', null),
+  empresa_cliente: Joi.string().max(200).allow('', null),
+  fecha_inicio: Joi.date().iso().allow(null),
+  fecha_fin: Joi.date().iso().allow(null),
+})), async (req, res) => {
+  try {
+    const [contrato] = await db('core.contratos').insert(req.body).returning('*')
+    res.status(201).json({ contrato })
+  } catch (err) {
+    if (err.constraint) return res.status(409).json({ error: 'Número de contrato ya existe' })
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
   }
@@ -37,6 +56,7 @@ router.get('/plantas', async (req, res) => {
 
 // POST /api/v1/assets/plantas
 router.post('/plantas', authorize(...WRITE_ROLES), validate(Joi.object({
+  contrato_id: Joi.string().uuid().allow(null),
   codigo: Joi.string().max(20).required(),
   nombre: Joi.string().max(200).required(),
   ubicacion: Joi.string().allow('', null),
@@ -61,6 +81,23 @@ router.get('/areas', async (req, res) => {
     const areas = await query
     res.json({ areas })
   } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/v1/assets/areas
+router.post('/areas', authorize(...WRITE_ROLES), validate(Joi.object({
+  sistema_id: Joi.string().uuid().required(),
+  codigo: Joi.string().max(30).required(),
+  nombre: Joi.string().max(200).required(),
+  descripcion: Joi.string().allow('', null),
+})), async (req, res) => {
+  try {
+    const [area] = await db('core.areas').insert(req.body).returning('*')
+    res.status(201).json({ area })
+  } catch (err) {
+    if (err.constraint) return res.status(409).json({ error: 'Código de área ya existe en este sistema' })
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
   }
@@ -156,6 +193,8 @@ router.get('/:id', async (req, res) => {
 // POST /api/v1/assets
 router.post('/', authorize(...WRITE_ROLES), validate(Joi.object({
   sistema_id: Joi.string().uuid().required(),
+  area_id: Joi.string().uuid().allow(null),
+  equipo_superior_id: Joi.string().uuid().allow(null),
   codigo_sap: Joi.string().max(50).allow('', null),
   tag: Joi.string().max(100).required(),
   nombre: Joi.string().max(200).required(),
@@ -181,6 +220,8 @@ router.post('/', authorize(...WRITE_ROLES), validate(Joi.object({
 // PUT /api/v1/assets/:id
 router.put('/:id', authorize(...WRITE_ROLES), validate(Joi.object({
   sistema_id: Joi.string().uuid(),
+  area_id: Joi.string().uuid().allow(null),
+  equipo_superior_id: Joi.string().uuid().allow(null),
   codigo_sap: Joi.string().max(50).allow('', null),
   tag: Joi.string().max(100),
   nombre: Joi.string().max(200),

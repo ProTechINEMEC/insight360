@@ -28,6 +28,7 @@
           <button class="toggle-btn" @click="expandAll(true)" title="Expandir todo">⊞</button>
           <button class="toggle-btn" @click="expandAll(false)" title="Colapsar todo">⊟</button>
         </div>
+        <button v-if="canWrite" class="btn btn-primary btn-sm" @click="openAssetForm()">+ Nuevo Equipo</button>
       </div>
     </div>
 
@@ -50,6 +51,7 @@
               <span class="node-label">{{ contrato.nombre }}</span>
               <div class="node-badges">
                 <span class="count-badge">{{ contrato._activoCount }} activos</span>
+                <button v-if="canWrite" class="quick-add-btn" title="Nuevo equipo en este contrato" @click.stop="openAssetForm(contrato.id)">+</button>
               </div>
             </div>
 
@@ -64,6 +66,7 @@
                   <span class="node-code">{{ planta.codigo }}</span>
                   <div class="node-badges">
                     <span class="count-badge">{{ planta._activoCount }} activos</span>
+                    <button v-if="canWrite" class="quick-add-btn" title="Nuevo equipo en esta planta" @click.stop="openAssetForm(contrato.id, planta.id)">+</button>
                   </div>
                 </div>
 
@@ -78,6 +81,7 @@
                       <span class="node-code">{{ sistema.codigo }}</span>
                       <div class="node-badges">
                         <span class="count-badge">{{ sistema.activos.length }}</span>
+                        <button v-if="canWrite" class="quick-add-btn" title="Nuevo equipo en este sistema" @click.stop="openAssetForm(contrato.id, planta.id, sistema.id)">+</button>
                       </div>
                     </div>
 
@@ -254,6 +258,18 @@
         </div>
       </div>
     </Teleport>
+
+    <!-- Asset create modal -->
+    <Teleport to="body">
+      <AssetFormModal
+        v-if="assetFormOpen"
+        :pre-contrato="assetFormContext.contrato"
+        :pre-planta="assetFormContext.planta"
+        :pre-sistema="assetFormContext.sistema"
+        @close="assetFormOpen = false"
+        @saved="onAssetSaved"
+      />
+    </Teleport>
   </div>
 </template>
 
@@ -262,6 +278,7 @@ import { ref, computed, reactive, onMounted, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/services/api'
 import TrendChart from '@/components/TrendChart.vue'
+import AssetFormModal from '@/components/AssetFormModal.vue'
 
 const auth = useAuthStore()
 
@@ -289,6 +306,22 @@ const expandedNodes = reactive({
   plantas: new Set(),
   sistemas: new Set(),
 })
+
+// Asset form modal
+const assetFormOpen = ref(false)
+const assetFormContext = reactive({ contrato: '', planta: '', sistema: '' })
+
+function openAssetForm(contrato = '', planta = '', sistema = '') {
+  assetFormContext.contrato = contrato
+  assetFormContext.planta = planta
+  assetFormContext.sistema = sistema
+  assetFormOpen.value = true
+}
+
+function onAssetSaved(activo) {
+  assetFormOpen.value = false
+  loadTree()
+}
 
 // Quick reading modal
 const quickReadingActivo = ref(null)
@@ -440,14 +473,7 @@ async function submitQuickReading() {
     })
     quickReadingActivo.value = null
 
-    // Refresh health and detail puntos
-    const [hRes] = await Promise.allSettled([
-      api.get(`/health/asset/${quickReadingActivo.value?.id || selectedActivoId.value}`)
-    ])
-    if (hRes?.status === 'fulfilled') {
-      const aid = hRes.value.data.activo_id
-      healthMap.value = { ...healthMap.value, [aid]: hRes.value.data }
-    }
+    // Refresh detail puntos
     if (selectedActivoId.value) {
       const { data } = await api.get('/measurements/latest', { params: { activo_id: selectedActivoId.value } })
       detailPuntos.value = data.puntos
