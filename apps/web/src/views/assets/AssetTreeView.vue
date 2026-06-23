@@ -47,7 +47,12 @@
             <!-- Contrato row -->
             <div class="tree-row tree-row-contrato" @click="toggleNode('contrato', contrato.id)">
               <span class="expand-icon">{{ expandedNodes.contratos.has(contrato.id) ? '▼' : '▶' }}</span>
-              <span class="node-icon">📋</span>
+              <svg class="node-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2.5" y="1.5" width="11" height="13" rx="1"/>
+                <line x1="5" y1="5.5" x2="11" y2="5.5"/>
+                <line x1="5" y1="8" x2="11" y2="8"/>
+                <line x1="5" y1="10.5" x2="8.5" y2="10.5"/>
+              </svg>
               <span class="node-label">{{ contrato.nombre }}</span>
               <div class="node-badges">
                 <span class="count-badge">{{ contrato._activoCount }} activos</span>
@@ -61,7 +66,10 @@
                 <div class="tree-row tree-row-planta" @click="toggleNode('planta', planta.id)">
                   <span class="indent-1"></span>
                   <span class="expand-icon">{{ expandedNodes.plantas.has(planta.id) ? '▼' : '▶' }}</span>
-                  <span class="node-icon">🏭</span>
+                  <svg class="node-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <rect x="1.5" y="7.5" width="13" height="7" rx="0.5"/>
+                    <polyline points="1.5,7.5 4.5,3.5 8,6 11.5,2.5 14.5,7.5"/>
+                  </svg>
                   <span class="node-label">{{ planta.nombre }}</span>
                   <span class="node-code">{{ planta.codigo }}</span>
                   <div class="node-badges">
@@ -76,7 +84,14 @@
                     <div class="tree-row tree-row-sistema" @click="toggleNode('sistema', sistema.id)">
                       <span class="indent-2"></span>
                       <span class="expand-icon">{{ expandedNodes.sistemas.has(sistema.id) ? '▼' : '▶' }}</span>
-                      <span class="node-icon">⚙️</span>
+                      <svg class="node-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                        <circle cx="8" cy="3" r="1.5"/>
+                        <circle cx="3" cy="13" r="1.5"/>
+                        <circle cx="13" cy="13" r="1.5"/>
+                        <line x1="8" y1="4.5" x2="3.8" y2="11.6"/>
+                        <line x1="8" y1="4.5" x2="12.2" y2="11.6"/>
+                        <line x1="4.5" y1="13" x2="11.5" y2="13"/>
+                      </svg>
                       <span class="node-label">{{ sistema.nombre }}</span>
                       <span class="node-code">{{ sistema.codigo }}</span>
                       <div class="node-badges">
@@ -95,7 +110,10 @@
                       >
                         <span class="indent-3"></span>
                         <span class="crit-bar"></span>
-                        <span class="node-icon activo-icon">■</span>
+                        <svg class="node-icon-svg activo-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                          <rect x="3" y="3" width="10" height="10" rx="1.5"/>
+                          <circle cx="8" cy="8" r="2.5"/>
+                        </svg>
                         <div class="activo-info">
                           <span class="activo-tag">{{ activo.tag }}</span>
                           <span class="activo-name">{{ activo.nombre }}</span>
@@ -177,7 +195,7 @@
         </template>
 
         <div v-else class="detail-placeholder">
-          <div class="placeholder-icon">📋</div>
+          <svg class="placeholder-icon-svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="6" width="32" height="36" rx="2"/><line x1="14" y1="16" x2="34" y2="16"/><line x1="14" y1="22" x2="34" y2="22"/><line x1="14" y1="28" x2="24" y2="28"/></svg>
           <div>Selecciona un activo en el árbol para ver su detalle</div>
         </div>
       </div>
@@ -578,7 +596,11 @@ onMounted(loadTree)
 .tree-row-activo { font-size: 0.8125rem; }
 
 .expand-icon { width: 12px; font-size: 0.6rem; color: var(--color-text-muted); flex-shrink: 0; }
-.node-icon { font-size: 1rem; flex-shrink: 0; }
+.node-icon-svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--color-text-muted); }
+.tree-row-contrato .node-icon-svg { color: rgba(255,255,255,0.6); }
+.tree-row-planta .node-icon-svg { color: var(--color-brand); opacity: 0.8; }
+.tree-row-sistema .node-icon-svg { color: var(--color-text-secondary); }
+.activo-icon-svg { width: 12px; height: 12px; color: var(--color-text-muted); }
 .node-label { flex: 1; }
 .node-code { font-size: 0.7rem; color: var(--color-text-muted); font-family: monospace; }
 .node-badges { display: flex; align-items: center; gap: 0.375rem; }
@@ -593,7 +615,6 @@ onMounted(loadTree)
 .crit-esencial .crit-bar { background: #d97706; }
 .crit-general .crit-bar { background: #16a34a; }
 
-.activo-icon { font-size: 0.6rem; color: var(--color-text-muted); flex-shrink: 0; }
 .activo-info { flex: 1; }
 .activo-tag { font-weight: 700; display: block; font-family: monospace; }
 .activo-name { font-size: 0.75rem; color: var(--color-text-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
@@ -655,7 +676,7 @@ onMounted(loadTree)
 .detail-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: auto; }
 
 .detail-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--color-text-muted); font-size: 0.9375rem; gap: 0.75rem; }
-.placeholder-icon { font-size: 3rem; }
+.placeholder-icon-svg { width: 48px; height: 48px; color: var(--color-border); }
 
 /* Modals */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }

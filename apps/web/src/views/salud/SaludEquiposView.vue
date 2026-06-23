@@ -2,34 +2,52 @@
   <div class="salud-view">
     <!-- Filters bar -->
     <div class="filters-bar card">
-      <div class="filters-left">
-        <select v-model="filtroContrato" class="filter-select" @change="filtroPlanta = ''">
-          <option value="">Todos los contratos</option>
-          <option v-for="ct in contratos" :key="ct.id" :value="ct.id">{{ ct.nombre }}</option>
-        </select>
-        <select v-model="filtroPlanta" class="filter-select" :disabled="!filtroContrato">
-          <option value="">Todas las plantas</option>
-          <option v-for="p in plantasFiltradas" :key="p.id" :value="p.id">{{ p.nombre }}</option>
-        </select>
-        <div class="search-wrap">
-          <input
-            v-model="searchTag"
-            type="text"
-            placeholder="Buscar TAG o nombre..."
-            class="filter-input"
-          />
-          <button v-if="searchTag" class="search-clear" @click="searchTag = ''">✕</button>
+      <div class="filters-row">
+        <!-- Row 1: cascading location + search -->
+        <div class="filters-group">
+          <select v-model="filtroContrato" class="filter-select" @change="filtroPlanta = ''; filtroSistema = ''">
+            <option value="">Todos los contratos</option>
+            <option v-for="ct in contratos" :key="ct.id" :value="ct.id">{{ ct.nombre }}</option>
+          </select>
+          <select v-model="filtroPlanta" class="filter-select" :disabled="!filtroContrato" @change="filtroSistema = ''">
+            <option value="">Todas las plantas</option>
+            <option v-for="p in plantasFiltradas" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+          </select>
+          <select v-model="filtroSistema" class="filter-select" :disabled="!filtroPlanta">
+            <option value="">Todos los sistemas</option>
+            <option v-for="s in sistemasFiltrados" :key="s.id" :value="s.id">{{ s.nombre }}</option>
+          </select>
+          <div class="search-wrap">
+            <input v-model="searchTag" type="text" placeholder="Buscar TAG o nombre..." class="filter-input" />
+            <button v-if="searchTag" class="search-clear" @click="searchTag = ''">✕</button>
+          </div>
         </div>
-      </div>
-      <div class="filters-right">
-        <div class="legend">
-          <span class="legend-item"><span class="cond-dot cond-normal"></span>Normal</span>
-          <span class="legend-item"><span class="cond-dot cond-observacion"></span>Observación</span>
-          <span class="legend-item"><span class="cond-dot cond-alerta"></span>Alerta</span>
-          <span class="legend-item"><span class="cond-dot cond-urgencia"></span>Urgencia</span>
-          <span class="legend-item"><span class="cond-dot cond-empty"></span>Sin datos</span>
+
+        <!-- Row 2: criticidad chips + estado op + legend + refresh -->
+        <div class="filters-group filters-group-bottom">
+          <div class="filter-label-group">
+            <span class="filter-label">Criticidad:</span>
+            <div class="chip-group">
+              <button
+                v-for="c in CRITICIDADES"
+                :key="c.value"
+                :class="['chip', `chip-${c.value}`, { active: filtroCrit.includes(c.value) }]"
+                @click="toggleCrit(c.value)"
+              >{{ c.label }}</button>
+            </div>
+          </div>
+          <select v-model="filtroEstado" class="filter-select">
+            <option value="">Todos los estados</option>
+            <option v-for="e in ESTADOS_OP" :key="e.value" :value="e.value">{{ e.label }}</option>
+          </select>
+          <div class="legend">
+            <span class="legend-item"><span class="cond-dot cond-normal"></span>Normal</span>
+            <span class="legend-item"><span class="cond-dot cond-observacion"></span>Observación</span>
+            <span class="legend-item"><span class="cond-dot cond-alerta"></span>Alerta</span>
+            <span class="legend-item"><span class="cond-dot cond-urgencia"></span>Urgencia</span>
+          </div>
+          <button class="btn btn-primary btn-sm" @click="loadMatrix">Actualizar</button>
         </div>
-        <button class="btn btn-primary btn-sm" @click="loadMatrix">Actualizar</button>
       </div>
     </div>
 
@@ -53,11 +71,12 @@
               <th class="col-tag">TAG</th>
               <th class="col-nombre">Equipo</th>
               <th class="col-crit">Crit.</th>
+              <th class="col-estado">Estado</th>
               <th
                 v-for="t in tecnicas"
                 :key="t.codigo"
                 class="col-tecnica"
-                :title="t.nombre + (t.norma_referencia ? '\n' + t.norma_referencia : '')"
+                :title="t.nombre + (t.norma_referencia ? ' — ' + t.norma_referencia : '')"
               >{{ t.codigo }}</th>
               <th class="col-peor">Peor</th>
             </tr>
@@ -76,6 +95,10 @@
               <td class="col-nombre">{{ row.nombre }}</td>
               <td class="col-crit">
                 <span class="crit-plain">{{ row.criticidad[0].toUpperCase() }}</span>
+              </td>
+              <td class="col-estado">
+                <span v-if="row.estado_op_actual" :class="`estado-op estado-op-${row.estado_op_actual}`">{{ ESTADO_OP_SHORT[row.estado_op_actual] }}</span>
+                <span v-else class="no-data">—</span>
               </td>
               <td
                 v-for="t in tecnicas"
@@ -110,7 +133,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/services/api'
 
@@ -120,13 +143,35 @@ const COND_ORDER = ['urgencia', 'alerta', 'observacion', 'normal']
 const COND_LABELS = { normal: 'Normal', observacion: 'Observación', alerta: 'Alerta', urgencia: 'Urgencia' }
 const COND_SHORT  = { normal: 'N', observacion: 'O', alerta: 'A', urgencia: 'U' }
 
+const CRITICIDADES = [
+  { value: 'critico', label: 'C' },
+  { value: 'esencial', label: 'E' },
+  { value: 'general', label: 'G' },
+]
+const ESTADOS_OP = [
+  { value: 'operativo',          label: 'Operativo' },
+  { value: 'operativo_limitado', label: 'Op. Limitado' },
+  { value: 'stand_by',           label: 'Stand By' },
+  { value: 'fuera_de_servicio',  label: 'Fuera de Servicio' },
+  { value: 'dado_de_baja',       label: 'Dado de Baja' },
+]
+const ESTADO_OP_SHORT = {
+  operativo:          'OPER',
+  operativo_limitado: 'LIM',
+  stand_by:           'SB',
+  fuera_de_servicio:  'FDS',
+  dado_de_baja:       'BAJA',
+}
+
 const loading = ref(false)
 const contratos = ref([])
-const todasPlantasCache = ref([])  // all plantas from matrix data for filtering
 const tecnicas = ref([])
 const rows = ref([])
 const filtroContrato = ref('')
 const filtroPlanta = ref('')
+const filtroSistema = ref('')
+const filtroCrit = ref([])
+const filtroEstado = ref('')
 const searchTag = ref('')
 
 const plantasFiltradas = computed(() => {
@@ -135,18 +180,35 @@ const plantasFiltradas = computed(() => {
   return rows.value
     .filter((r) => r.contrato_id === filtroContrato.value)
     .reduce((acc, r) => {
-      if (!seen.has(r.planta_id)) {
-        seen.add(r.planta_id)
-        acc.push({ id: r.planta_id, nombre: r.planta_nombre })
-      }
+      if (!seen.has(r.planta_id)) { seen.add(r.planta_id); acc.push({ id: r.planta_id, nombre: r.planta_nombre }) }
       return acc
     }, [])
 })
+
+const sistemasFiltrados = computed(() => {
+  if (!filtroPlanta.value) return []
+  const seen = new Set()
+  return rows.value
+    .filter((r) => r.planta_id === filtroPlanta.value)
+    .reduce((acc, r) => {
+      if (!seen.has(r.sistema_id)) { seen.add(r.sistema_id); acc.push({ id: r.sistema_id, nombre: r.sistema_nombre }) }
+      return acc
+    }, [])
+})
+
+function toggleCrit(val) {
+  const idx = filtroCrit.value.indexOf(val)
+  if (idx === -1) filtroCrit.value.push(val)
+  else filtroCrit.value.splice(idx, 1)
+}
 
 const filteredRows = computed(() => {
   return rows.value.filter((r) => {
     if (filtroContrato.value && r.contrato_id !== filtroContrato.value) return false
     if (filtroPlanta.value && r.planta_id !== filtroPlanta.value) return false
+    if (filtroSistema.value && r.sistema_id !== filtroSistema.value) return false
+    if (filtroCrit.value.length && !filtroCrit.value.includes(r.criticidad)) return false
+    if (filtroEstado.value && r.estado_op_actual !== filtroEstado.value) return false
     if (searchTag.value) {
       const q = searchTag.value.toLowerCase()
       return r.tag.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q)
@@ -204,32 +266,44 @@ onMounted(async () => {
 .salud-view { display: flex; flex-direction: column; gap: 1rem; }
 
 /* Filters bar */
-.filters-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; flex-wrap: wrap; padding: 0.875rem 1.25rem; flex-shrink: 0;
-}
-.filters-left { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; flex: 1; }
-.filters-right { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.filters-bar { padding: 0.875rem 1.25rem; flex-shrink: 0; }
+.filters-row { display: flex; flex-direction: column; gap: 0.625rem; }
+.filters-group { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.filters-group-bottom { padding-top: 0.5rem; border-top: 1px solid var(--color-border); }
 
 .filter-select, .filter-input {
   padding: 0.4rem 0.75rem; border: 1px solid var(--color-border); border-radius: 6px;
   font-size: 0.8125rem; background: #fff; font-family: inherit;
 }
 .filter-select:focus, .filter-input:focus { outline: none; border-color: var(--color-brand); }
-.filter-select { min-width: 160px; }
-.filter-input { min-width: 200px; }
+.filter-select:disabled { background: var(--color-bg); color: var(--color-text-muted); }
+.filter-select { min-width: 150px; }
+.filter-input { min-width: 190px; }
 .search-wrap { position: relative; display: flex; align-items: center; }
 .search-clear { position: absolute; right: 0.4rem; background: none; border: none; cursor: pointer; color: var(--color-text-muted); font-size: 0.8rem; }
 
+/* Criticidad chips */
+.filter-label-group { display: flex; align-items: center; gap: 0.5rem; }
+.filter-label { font-size: 0.75rem; color: var(--color-text-muted); white-space: nowrap; }
+.chip-group { display: flex; gap: 0.25rem; }
+.chip {
+  padding: 2px 10px; border-radius: 999px; border: 1px solid var(--color-border);
+  background: #fff; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  color: var(--color-text-secondary); transition: all 0.12s;
+}
+.chip.active.chip-critico  { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
+.chip.active.chip-esencial { background: #fffbeb; border-color: #d97706; color: #d97706; }
+.chip.active.chip-general  { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
+.chip:not(.active):hover { background: var(--color-bg); }
+
 /* Legend */
-.legend { display: flex; align-items: center; gap: 0.875rem; flex-wrap: wrap; }
-.legend-item { display: flex; align-items: center; gap: 0.375rem; font-size: 0.75rem; color: var(--color-text-secondary); }
-.cond-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.legend { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-left: auto; }
+.legend-item { display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem; color: var(--color-text-secondary); }
+.cond-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 .cond-dot.cond-normal { background: #16a34a; }
 .cond-dot.cond-observacion { background: #2563eb; }
 .cond-dot.cond-alerta { background: #d97706; }
 .cond-dot.cond-urgencia { background: #dc2626; }
-.cond-dot.cond-empty { background: #d1d5db; }
 
 .btn-sm { padding: 0.35rem 0.875rem; font-size: 0.8125rem; }
 
@@ -239,7 +313,7 @@ onMounted(async () => {
 
 /* Matrix */
 .matrix-wrap { padding: 0; overflow: hidden; }
-.matrix-scroll { overflow-x: auto; max-height: calc(100vh - 220px); overflow-y: auto; }
+.matrix-scroll { overflow-x: auto; max-height: calc(100vh - 290px); overflow-y: auto; }
 .matrix-footer { padding: 0.5rem 1rem; font-size: 0.75rem; color: var(--color-text-muted); border-top: 1px solid var(--color-border); }
 
 .matrix-table {
@@ -284,8 +358,20 @@ onMounted(async () => {
 .col-tag { min-width: 90px; }
 .col-nombre { min-width: 200px; }
 .col-crit { width: 40px; text-align: center; }
+.col-estado { min-width: 80px; }
 .col-tecnica { width: 52px; text-align: center; }
 .col-peor { min-width: 100px; }
+
+/* Estado operacional badge in matrix */
+.estado-op {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  font-size: 0.65rem; font-weight: 700; letter-spacing: 0.03em;
+}
+.estado-op-operativo          { background: #dcfce7; color: #15803d; }
+.estado-op-operativo_limitado { background: #fef3c7; color: #b45309; }
+.estado-op-stand_by           { background: #dbeafe; color: #1d4ed8; }
+.estado-op-fuera_de_servicio  { background: #fee2e2; color: #b91c1c; }
+.estado-op-dado_de_baja       { background: #f3f4f6; color: #6b7280; }
 
 .tag-mono { font-family: monospace; font-weight: 700; font-size: 0.8125rem; }
 

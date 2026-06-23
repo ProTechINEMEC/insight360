@@ -169,7 +169,7 @@ router.post('/findings', authorize(...WRITE_ROLES), validate(Joi.object({
 router.get('/salud-matriz', async (req, res) => {
   try {
     // Fetch all active tecnicas
-    const tecnicas = await db('cbm.tecnicas').where({ activo: true }).orderBy('nombre').select('id', 'codigo', 'nombre')
+    const tecnicas = await db('cbm.tecnicas').where({ activo: true }).orderBy('nombre').select('id', 'codigo', 'nombre', 'norma_referencia')
 
     // Build base activos query filtered by contrato/planta
     const activosQuery = db('core.activos as a')
@@ -219,6 +219,19 @@ router.get('/salud-matriz', async (req, res) => {
       condMap[row.activo_id][row.tecnica_id] = row.condicion
     }
 
+    // Most recent estado_operacional per activo (from latest finding across all tecnicas)
+    const estadoRows = await db.raw(`
+      SELECT DISTINCT ON (c.activo_id)
+        c.activo_id,
+        f.estado_operacional
+      FROM cbm.inspection_findings f
+      JOIN cbm.componentes c ON f.componente_id = c.id
+      WHERE c.activo_id = ANY(?)
+      ORDER BY c.activo_id, f.time DESC
+    `, [activoIds])
+    const estadoMap = {}
+    for (const row of estadoRows.rows) estadoMap[row.activo_id] = row.estado_operacional
+
     // Determine which techniques apply to each activo via componentes × catalogo_modos_falla
     const [aplicableRows, compCounts] = await Promise.all([
       db.raw(`
@@ -254,8 +267,10 @@ router.get('/salud-matriz', async (req, res) => {
         contrato_nombre: a.contrato_nombre,
         planta_id: a.planta_id,
         planta_nombre: a.planta_nombre,
+        sistema_id: a.sistema_id,
         sistema_nombre: a.sistema_nombre,
         area_nombre: a.area_nombre,
+        estado_op_actual: estadoMap[a.id] || null,
         condiciones: Object.fromEntries(
           tecnicas.map((t) => [t.codigo, (condMap[a.id] || {})[t.id] || null])
         ),
