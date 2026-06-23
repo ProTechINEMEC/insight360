@@ -75,18 +75,19 @@
               <td class="col-tag"><span class="tag-mono">{{ row.tag }}</span></td>
               <td class="col-nombre">{{ row.nombre }}</td>
               <td class="col-crit">
-                <span :class="`crit-badge crit-${row.criticidad}`">{{ row.criticidad[0].toUpperCase() }}</span>
+                <span class="crit-plain">{{ row.criticidad[0].toUpperCase() }}</span>
               </td>
               <td
                 v-for="t in tecnicas"
                 :key="t.codigo"
                 class="col-tecnica"
-                :title="row.condiciones[t.codigo] ? `${t.nombre}: ${COND_LABELS[row.condiciones[t.codigo]]}` : `${t.nombre}: Sin datos`"
+                :title="cellTitle(row, t)"
               >
                 <span
                   v-if="row.condiciones[t.codigo]"
                   :class="`cond-cell cond-${row.condiciones[t.codigo]}`"
                 >{{ COND_SHORT[row.condiciones[t.codigo]] }}</span>
+                <span v-else-if="row.aplica && row.aplica[t.codigo] === false" class="cond-cell cond-na" title="">N/A</span>
                 <span v-else class="cond-cell cond-empty">—</span>
               </td>
               <td class="col-peor">
@@ -157,6 +158,13 @@ const filteredRows = computed(() => {
 function worstCondicion(row) {
   const found = COND_ORDER.find((c) => Object.values(row.condiciones).includes(c))
   return found || null
+}
+
+function cellTitle(row, t) {
+  if (row.condiciones[t.codigo]) return `${t.nombre}: ${COND_LABELS[row.condiciones[t.codigo]]}`
+  if (row.aplica && row.aplica[t.codigo] === false) return `${t.nombre}: No aplica a este equipo`
+  if (row.aplica && row.aplica[t.codigo] === true) return `${t.nombre}: Sin datos`
+  return `${t.nombre}: Sin componentes registrados`
 }
 
 function goToActivo(id) {
@@ -281,11 +289,8 @@ onMounted(async () => {
 
 .tag-mono { font-family: monospace; font-weight: 700; font-size: 0.8125rem; }
 
-/* Criticidad badge */
-.crit-badge { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; font-size: 0.65rem; font-weight: 800; color: #fff; }
-.crit-critico { background: #dc2626; }
-.crit-esencial { background: #d97706; }
-.crit-general { background: #16a34a; }
+/* Criticidad — plain, no color */
+.crit-plain { font-size: 0.7rem; font-weight: 700; color: var(--color-text-muted); }
 
 /* Condition cells */
 .cond-cell {
@@ -298,6 +303,7 @@ onMounted(async () => {
 .cond-cell.cond-alerta { background: #fef3c7; color: #b45309; }
 .cond-cell.cond-urgencia { background: #fee2e2; color: #b91c1c; }
 .cond-cell.cond-empty { background: none; color: var(--color-text-muted); }
+.cond-cell.cond-na { background: #f3f4f6; color: #9ca3af; font-size: 0.6rem; letter-spacing: 0.02em; }
 
 /* Overall condition badge */
 .cond-badge {

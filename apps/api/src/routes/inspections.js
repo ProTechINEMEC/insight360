@@ -81,6 +81,14 @@ router.post('/componentes', authorize(...WRITE_ROLES), validate(Joi.object({
   nombre: Joi.string().max(300).required(),
   descripcion: Joi.string().allow('', null),
 })), async (req, res) => {
+  // Strip any extra fields the client may send (tag, estado_operacional, codigo_cmms)
+  req.body = {
+    activo_id: req.body.activo_id,
+    tipo_componente_id: req.body.tipo_componente_id || null,
+    cmms_id: req.body.cmms_id || req.body.codigo_cmms || null,
+    nombre: req.body.nombre,
+    descripcion: req.body.descripcion || null,
+  }
   try {
     const [componente] = await db('cbm.componentes').insert(req.body).returning('*')
     res.status(201).json({ componente })
@@ -204,29 +212,62 @@ router.get('/salud-matriz', async (req, res) => {
       ORDER BY c.activo_id, f.tecnica_id, f.time DESC
     `, [activoIds])
 
-    // Build a lookup map: activo_id -> tecnica_id -> condicion
+    // Build condition lookup: activo_id -> tecnica_id -> condicion
     const condMap = {}
     for (const row of findings.rows) {
       if (!condMap[row.activo_id]) condMap[row.activo_id] = {}
       condMap[row.activo_id][row.tecnica_id] = row.condicion
     }
 
+    // Determine which techniques apply to each activo via componentes × catalogo_modos_falla
+    const [aplicableRows, compCounts] = await Promise.all([
+      db.raw(`
+        SELECT DISTINCT c.activo_id, mf.tecnica_id
+        FROM cbm.componentes c
+        JOIN cbm.catalogo_modos_falla mf ON mf.tipo_componente_id = c.tipo_componente_id
+        WHERE c.activo_id = ANY(?)
+      `, [activoIds]),
+      db('cbm.componentes')
+        .whereIn('activo_id', activoIds)
+        .groupBy('activo_id')
+        .select('activo_id', db.raw('count(*) as cnt')),
+    ])
+
+    const compCountMap = {}
+    for (const row of compCounts) compCountMap[row.activo_id] = Number(row.cnt)
+
+    const aplicaMap = {}
+    for (const row of aplicableRows.rows) {
+      if (!aplicaMap[row.activo_id]) aplicaMap[row.activo_id] = new Set()
+      aplicaMap[row.activo_id].add(row.tecnica_id)
+    }
+
     // Build result rows
-    const rows = activos.map((a) => ({
-      activo_id: a.id,
-      tag: a.tag,
-      nombre: a.nombre,
-      criticidad: a.criticidad,
-      contrato_id: a.contrato_id,
-      contrato_nombre: a.contrato_nombre,
-      planta_id: a.planta_id,
-      planta_nombre: a.planta_nombre,
-      sistema_nombre: a.sistema_nombre,
-      area_nombre: a.area_nombre,
-      condiciones: Object.fromEntries(
-        tecnicas.map((t) => [t.codigo, (condMap[a.id] || {})[t.id] || null])
-      ),
-    }))
+    const rows = activos.map((a) => {
+      const hasComps = (compCountMap[a.id] || 0) > 0
+      return {
+        activo_id: a.id,
+        tag: a.tag,
+        nombre: a.nombre,
+        criticidad: a.criticidad,
+        contrato_id: a.contrato_id,
+        contrato_nombre: a.contrato_nombre,
+        planta_id: a.planta_id,
+        planta_nombre: a.planta_nombre,
+        sistema_nombre: a.sistema_nombre,
+        area_nombre: a.area_nombre,
+        condiciones: Object.fromEntries(
+          tecnicas.map((t) => [t.codigo, (condMap[a.id] || {})[t.id] || null])
+        ),
+        // aplica: true = applies, false = does not apply (grey cell), null = no componentes (unknown)
+        aplica: Object.fromEntries(
+          tecnicas.map((t) => [
+            t.codigo,
+            hasComps ? (aplicaMap[a.id]?.has(t.id) ?? false) : null,
+          ])
+        ),
+      }
+    })
 
     res.json({ tecnicas, rows })
   } catch (err) {

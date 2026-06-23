@@ -119,18 +119,8 @@
         </div>
         <div class="field-row">
           <div class="field">
-            <label class="field-label">TAG (opcional)</label>
-            <input v-model="compForm.tag" class="input mono" placeholder="Ej: MOT-P401A" />
-          </div>
-          <div class="field">
-            <label class="field-label">Código CMMS</label>
-            <input v-model="compForm.codigo_cmms" class="input mono" placeholder="Código SAP/CMMS" />
-          </div>
-          <div class="field field-wide">
-            <label class="field-label">Estado Operacional</label>
-            <select v-model="compForm.estado_operacional" class="input">
-              <option v-for="e in ESTADOS_OP_LIST" :key="e.value" :value="e.value">{{ e.label }}</option>
-            </select>
+            <label class="field-label">Código CMMS / SAP PM</label>
+            <input v-model="compForm.cmms_id" class="input mono" placeholder="Ubicación funcional SAP" />
           </div>
         </div>
         <div class="field">
@@ -191,9 +181,7 @@ const compError = ref('')
 const compForm = reactive({
   tipo_componente_id: '',
   nombre: '',
-  tag: '',
-  codigo_cmms: '',
-  estado_operacional: 'operativo',
+  cmms_id: '',
   descripcion: '',
 })
 
@@ -207,13 +195,6 @@ const ESTADO_OP_LABELS = {
   fuera_de_servicio: 'Fuera de Servicio',
   dado_de_baja: 'Dado de Baja',
 }
-const ESTADOS_OP_LIST = [
-  { value: 'operativo', label: 'Operativo' },
-  { value: 'operativo_limitado', label: 'Operativo Limitado' },
-  { value: 'stand_by', label: 'Stand By' },
-  { value: 'fuera_de_servicio', label: 'Fuera de Servicio' },
-  { value: 'dado_de_baja', label: 'Dado de Baja' },
-]
 
 const tabs = [
   { key: 'info', label: 'Información General' },
@@ -250,20 +231,16 @@ async function submitComponente() {
   try {
     await api.post('/inspections/componentes', {
       activo_id: route.params.id,
-      tipo_componente_id: compForm.tipo_componente_id,
+      tipo_componente_id: compForm.tipo_componente_id || null,
+      cmms_id: compForm.cmms_id || null,
       nombre: compForm.nombre.trim(),
-      tag: compForm.tag || null,
-      codigo_cmms: compForm.codigo_cmms || null,
-      estado_operacional: compForm.estado_operacional,
       descripcion: compForm.descripcion || null,
     })
     compFormOpen.value = false
     compForm.tipo_componente_id = ''
     compForm.nombre = ''
-    compForm.tag = ''
-    compForm.codigo_cmms = ''
+    compForm.cmms_id = ''
     compForm.descripcion = ''
-    compForm.estado_operacional = 'operativo'
     await loadComponentes()
   } catch (err) {
     compError.value = err.response?.data?.error || 'Error al agregar componente'
