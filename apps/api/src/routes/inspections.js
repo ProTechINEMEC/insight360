@@ -46,14 +46,60 @@ router.get('/modos-falla', async (req, res) => {
     const query = db('cbm.catalogo_modos_falla as m')
       .join('cbm.tecnicas as t', 'm.tecnica_id', 't.id')
       .join('cbm.tipos_componente as tc', 'm.tipo_componente_id', 'tc.id')
-      .select('m.id', 'm.modo_falla', 't.nombre as tecnica', 'tc.nombre as tipo_componente')
-      .orderBy('m.modo_falla')
+      .select('m.id', 'm.modo_falla', 'm.tecnica_id', 'm.tipo_componente_id', 'tc.nombre as tipo_componente', 'tc.codigo as tipo_codigo')
+      .orderBy(['tc.nombre', 'm.modo_falla'])
 
     if (req.query.tecnica_id) query.where({ 'm.tecnica_id': req.query.tecnica_id })
     if (req.query.tipo_componente_id) query.where({ 'm.tipo_componente_id': req.query.tipo_componente_id })
 
     const modos = await query
     res.json({ modos })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/v1/inspections/modos-falla
+router.post('/modos-falla', authorize(...ADMIN_ROLES), validate(Joi.object({
+  tecnica_id: Joi.string().uuid().required(),
+  tipo_componente_id: Joi.string().uuid().required(),
+  modo_falla: Joi.string().max(300).required(),
+})), async (req, res) => {
+  try {
+    const [modo] = await db('cbm.catalogo_modos_falla')
+      .insert({ tecnica_id: req.body.tecnica_id, tipo_componente_id: req.body.tipo_componente_id, modo_falla: req.body.modo_falla })
+      .returning('*')
+    res.status(201).json({ modo })
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Este modo de falla ya existe para esta técnica y tipo de componente' })
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// PUT /api/v1/inspections/modos-falla/:id
+router.put('/modos-falla/:id', authorize(...ADMIN_ROLES), validate(Joi.object({
+  modo_falla: Joi.string().max(300).required(),
+})), async (req, res) => {
+  try {
+    const [modo] = await db('cbm.catalogo_modos_falla')
+      .where({ id: req.params.id })
+      .update({ modo_falla: req.body.modo_falla })
+      .returning('*')
+    if (!modo) return res.status(404).json({ error: 'No encontrado' })
+    res.json({ modo })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// DELETE /api/v1/inspections/modos-falla/:id
+router.delete('/modos-falla/:id', authorize(...ADMIN_ROLES), async (req, res) => {
+  try {
+    await db('cbm.catalogo_modos_falla').where({ id: req.params.id }).delete()
+    res.json({ ok: true })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Error interno' })
