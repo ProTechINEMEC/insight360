@@ -601,6 +601,61 @@ router.get('/resumen-activo', async (req, res) => {
   }
 })
 
+// GET /api/v1/inspections/activo-tree?activo_id=
+// Returns components with applicable techniques (for tree view levels 5 & 6)
+router.get('/activo-tree', async (req, res) => {
+  const { activo_id } = req.query
+  if (!activo_id) return res.status(400).json({ error: 'activo_id requerido' })
+
+  try {
+    const rows = await db('cbm.componentes as c')
+      .leftJoin('cbm.tipos_componente as tc', 'c.tipo_componente_id', 'tc.id')
+      .leftJoin('cbm.catalogo_modos_falla as mf', 'mf.tipo_componente_id', 'c.tipo_componente_id')
+      .leftJoin('cbm.tecnicas as t', function () {
+        this.on('t.id', '=', 'mf.tecnica_id').andOnVal('t.activo', '=', true)
+      })
+      .where({ 'c.activo_id': activo_id, 'c.activo': true })
+      .select(
+        'c.id as comp_id', 'c.nombre as comp_nombre',
+        'c.tipo_componente_id', 'tc.nombre as tipo_nombre',
+        't.id as tec_id', 't.codigo as tec_codigo', 't.nombre as tec_nombre',
+      )
+      .orderBy(['c.nombre', 't.nombre'])
+
+    const compMap = new Map()
+    const allTecMap = new Map()
+
+    for (const row of rows) {
+      if (!compMap.has(row.comp_id)) {
+        compMap.set(row.comp_id, {
+          id: row.comp_id,
+          nombre: row.comp_nombre,
+          tipo_componente_id: row.tipo_componente_id,
+          tipo_nombre: row.tipo_nombre,
+          tecnicas: [],
+        })
+      }
+      if (row.tec_id) {
+        const comp = compMap.get(row.comp_id)
+        if (!comp.tecnicas.some((t) => t.id === row.tec_id)) {
+          comp.tecnicas.push({ id: row.tec_id, codigo: row.tec_codigo, nombre: row.tec_nombre })
+        }
+        if (!allTecMap.has(row.tec_id)) {
+          allTecMap.set(row.tec_id, { id: row.tec_id, codigo: row.tec_codigo, nombre: row.tec_nombre })
+        }
+      }
+    }
+
+    const componentes = [...compMap.values()]
+    const generalTecnicas = [...allTecMap.values()].sort((a, b) => a.nombre.localeCompare(b.nombre))
+
+    res.json({ componentes, generalTecnicas })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Error interno' })
+  }
+})
+
 // ─── Salud Matrix ───────────────────────────────────────────────────────────
 
 // GET /api/v1/inspections/salud-matriz?contrato_id=&planta_id=

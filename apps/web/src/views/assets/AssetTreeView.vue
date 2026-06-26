@@ -102,24 +102,109 @@
 
                     <!-- Activos -->
                     <div v-if="expandedNodes.sistemas.has(sistema.id)">
-                      <div
-                        v-for="activo in sistema.activos"
-                        :key="activo.id"
-                        :class="['tree-row', 'tree-row-activo', `crit-${activo.criticidad}`, { selected: selectedActivoId === activo.id, match: !!search && isMatch(activo) }]"
-                        @click="selectActivo(activo)"
-                      >
-                        <span class="indent-3"></span>
-                        <span class="crit-bar"></span>
-                        <svg class="node-icon-svg activo-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
-                          <rect x="3" y="3" width="10" height="10" rx="1.5"/>
-                          <circle cx="8" cy="8" r="2.5"/>
-                        </svg>
-                        <div class="activo-info">
-                          <span class="activo-tag">{{ activo.tag }}</span>
-                          <span class="activo-name">{{ activo.nombre }}</span>
+                      <template v-for="activo in sistema.activos" :key="activo.id">
+                        <!-- Activo row -->
+                        <div
+                          :class="['tree-row', 'tree-row-activo', `crit-${activo.criticidad}`, { expanded: expandedActivos.has(activo.id), match: !!search && isMatch(activo) }]"
+                          @click="toggleActivo(activo)"
+                        >
+                          <span class="indent-3"></span>
+                          <span class="expand-icon">{{ expandedActivos.has(activo.id) ? '▼' : '▶' }}</span>
+                          <span class="crit-bar"></span>
+                          <svg class="node-icon-svg activo-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                            <rect x="3" y="3" width="10" height="10" rx="1.5"/>
+                            <circle cx="8" cy="8" r="2.5"/>
+                          </svg>
+                          <div class="activo-info">
+                            <span class="activo-tag">{{ activo.tag }}</span>
+                            <span class="activo-name">{{ activo.nombre }}</span>
+                          </div>
+                          <div class="activo-right"></div>
                         </div>
-                        <div class="activo-right"></div>
-                      </div>
+
+                        <!-- Component + technique expansion -->
+                        <div v-if="expandedActivos.has(activo.id)" class="activo-children">
+                          <div v-if="loadingActivoTree[activo.id]" class="tree-inline-loading">
+                            <div class="spinner-xs"></div>
+                          </div>
+                          <template v-else-if="activoTreeData[activo.id]">
+                            <!-- General node (union of all techniques) -->
+                            <template v-if="activoTreeData[activo.id].generalTecnicas.length">
+                              <div
+                                :class="['tree-row', 'tree-row-comp', { expanded: expandedComps[activo.id]?.has('__general__') }]"
+                                @click.stop="toggleComp(activo.id, '__general__')"
+                              >
+                                <span class="indent-4"></span>
+                                <span class="expand-icon">{{ expandedComps[activo.id]?.has('__general__') ? '▼' : '▶' }}</span>
+                                <svg class="node-icon-svg comp-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                                  <circle cx="8" cy="8" r="6"/>
+                                  <line x1="8" y1="5" x2="8" y2="8"/>
+                                  <line x1="8" y1="8" x2="10.5" y2="10.5"/>
+                                </svg>
+                                <span class="node-label">General</span>
+                                <span class="count-badge">{{ activoTreeData[activo.id].generalTecnicas.length }}</span>
+                              </div>
+                              <template v-if="expandedComps[activo.id]?.has('__general__')">
+                                <div
+                                  v-for="tec in activoTreeData[activo.id].generalTecnicas"
+                                  :key="tec.id"
+                                  :class="['tree-row', 'tree-row-tecnica', { selected: selectedNode?.activoId === activo.id && selectedNode?.compKey === '__general__' && selectedNode?.tecnicaId === tec.id }]"
+                                  @click.stop="selectTecnica(activo, null, tec)"
+                                >
+                                  <span class="indent-5"></span>
+                                  <span class="tec-codigo">{{ tec.codigo }}</span>
+                                  <span class="tec-nombre">{{ tec.nombre }}</span>
+                                </div>
+                              </template>
+                            </template>
+
+                            <!-- Per-component nodes -->
+                            <template v-for="comp in activoTreeData[activo.id].componentes" :key="comp.id">
+                              <div
+                                :class="['tree-row', 'tree-row-comp', { expanded: expandedComps[activo.id]?.has(comp.id) }]"
+                                @click.stop="toggleComp(activo.id, comp.id)"
+                              >
+                                <span class="indent-4"></span>
+                                <span class="expand-icon">{{ expandedComps[activo.id]?.has(comp.id) ? '▼' : '▶' }}</span>
+                                <svg class="node-icon-svg comp-icon-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+                                  <rect x="2" y="5" width="12" height="8" rx="1"/>
+                                  <line x1="5" y1="5" x2="5" y2="3"/>
+                                  <line x1="11" y1="5" x2="11" y2="3"/>
+                                  <line x1="5" y1="3" x2="11" y2="3"/>
+                                </svg>
+                                <span class="node-label">{{ comp.nombre }}</span>
+                                <span v-if="comp.tipo_nombre" class="node-code">{{ comp.tipo_nombre }}</span>
+                                <span v-if="comp.tecnicas.length" class="count-badge">{{ comp.tecnicas.length }}</span>
+                                <span v-else class="count-badge muted">Sin técnicas</span>
+                              </div>
+                              <template v-if="expandedComps[activo.id]?.has(comp.id)">
+                                <div
+                                  v-if="!comp.tecnicas.length"
+                                  class="tree-row tree-row-tecnica no-tec"
+                                >
+                                  <span class="indent-5"></span>
+                                  <span class="tec-nombre muted">Sin técnicas configuradas</span>
+                                </div>
+                                <div
+                                  v-for="tec in comp.tecnicas"
+                                  :key="tec.id"
+                                  :class="['tree-row', 'tree-row-tecnica', { selected: selectedNode?.activoId === activo.id && selectedNode?.compKey === comp.id && selectedNode?.tecnicaId === tec.id }]"
+                                  @click.stop="selectTecnica(activo, comp, tec)"
+                                >
+                                  <span class="indent-5"></span>
+                                  <span class="tec-codigo">{{ tec.codigo }}</span>
+                                  <span class="tec-nombre">{{ tec.nombre }}</span>
+                                </div>
+                              </template>
+                            </template>
+
+                            <div v-if="!activoTreeData[activo.id].componentes.length && !activoTreeData[activo.id].generalTecnicas.length" class="tree-row tree-row-tecnica no-tec">
+                              <span class="indent-4"></span>
+                              <span class="tec-nombre muted">Sin componentes configurados</span>
+                            </div>
+                          </template>
+                        </div>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -131,66 +216,108 @@
 
       <!-- Detail panel -->
       <div class="detail-panel card">
-        <template v-if="selectedActivo">
+
+        <!-- State 1: Full inspection detail -->
+        <template v-if="selectedNode && selectedInspeccion">
           <div class="detail-header">
-            <div :class="`detail-crit-bar crit-bar-${selectedActivo.criticidad}`"></div>
-            <div class="detail-title-block">
-              <div class="detail-tag">{{ selectedActivo.tag }}</div>
-              <div class="detail-name">{{ selectedActivo.nombre }}</div>
+            <button class="back-btn" @click="selectedInspeccion = null">← Volver</button>
+            <div class="detail-title-block" style="margin-top:0.5rem">
+              <div class="detail-tag">{{ selectedNode.activo.tag }}</div>
+              <div class="detail-name">{{ selectedNode.activo.nombre }}</div>
               <div class="detail-meta">
-                {{ selectedActivo.planta_nombre }} › {{ selectedActivo.sistema_nombre }}
+                <span :class="`cond-badge cond-badge-${selectedInspeccion.inspeccion.condicion}`">
+                  {{ COND_LABELS[selectedInspeccion.inspeccion.condicion] }}
+                </span>
+                &nbsp;{{ fmtDate(selectedInspeccion.inspeccion.fecha) }}
               </div>
-            </div>
-            <div class="detail-badges">
-              <span :class="`badge badge-${selectedActivo.criticidad}`">{{ selectedActivo.criticidad }}</span>
             </div>
           </div>
 
-          <!-- Técnicas de inspección -->
           <div class="detail-section">
-            <div class="detail-section-header">
-              <div class="detail-section-title">Técnicas de Inspección</div>
-              <button v-if="canWrite" class="btn btn-primary btn-sm" @click="openNewInspeccion">+ Agregar Registro</button>
+            <div class="detail-section-title">Información General</div>
+            <div class="insp-detail-grid">
+              <div class="insp-field"><span class="insp-label">Técnica</span><span>{{ selectedInspeccion.inspeccion.tecnica_codigo }} — {{ selectedInspeccion.inspeccion.tecnica_nombre }}</span></div>
+              <div class="insp-field"><span class="insp-label">Componente</span><span>{{ selectedInspeccion.inspeccion.componente_nombre }}</span></div>
+              <div class="insp-field"><span class="insp-label">Fecha</span><span>{{ fmtDateTime(selectedInspeccion.inspeccion.fecha) }}</span></div>
+              <div class="insp-field"><span class="insp-label">Analista</span><span>{{ selectedInspeccion.inspeccion.analista || '—' }}</span></div>
+              <div class="insp-field"><span class="insp-label">Est. Operacional</span><span>{{ ESTADOS_OP.find(e => e.value === selectedInspeccion.inspeccion.estado_operacional)?.label || selectedInspeccion.inspeccion.estado_operacional }}</span></div>
+              <div v-if="selectedInspeccion.inspeccion.modo_falla" class="insp-field"><span class="insp-label">Modo de Falla</span><span>{{ selectedInspeccion.inspeccion.modo_falla }}</span></div>
+              <div v-if="selectedInspeccion.inspeccion.norma_referencia" class="insp-field"><span class="insp-label">Norma</span><span>{{ selectedInspeccion.inspeccion.norma_referencia }}</span></div>
             </div>
-            <div v-if="loadingDetail" class="detail-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>
-            <div v-else-if="!detailTecnicas.length" class="detail-empty">Sin técnicas aplicables configuradas</div>
-            <div v-else class="detail-tecnicas">
-              <div
-                v-for="t in detailTecnicas"
-                :key="t.id"
-                class="detail-tecnica"
-                :class="{ 'has-data': t.ultima_inspeccion, 'clickable': t.ultima_inspeccion }"
-                @click="t.ultima_inspeccion && goToInspeccion(t.ultima_inspeccion.inspeccion_id)"
-              >
-                <div class="dt-left">
-                  <div class="dt-codigo">{{ t.codigo }}</div>
-                  <div class="dt-nombre">{{ t.nombre }}</div>
-                </div>
-                <div class="dt-right" v-if="t.ultima_inspeccion">
-                  <span :class="`cond-badge cond-badge-${t.ultima_inspeccion.condicion}`">
-                    {{ COND_LABELS[t.ultima_inspeccion.condicion] }}
-                  </span>
-                  <div class="dt-fecha">{{ fmtDate(t.ultima_inspeccion.fecha) }}</div>
-                  <div class="dt-analista" v-if="t.ultima_inspeccion.analista">{{ t.ultima_inspeccion.analista }}</div>
-                </div>
-                <div class="dt-right dt-nodata" v-else>
-                  <span class="dt-pending">Sin datos</span>
-                </div>
+            <div v-if="selectedInspeccion.inspeccion.observaciones" class="insp-obs">
+              <span class="insp-label">Observaciones</span>
+              <p>{{ selectedInspeccion.inspeccion.observaciones }}</p>
+            </div>
+          </div>
+
+          <div v-if="selectedInspeccion.mediciones.length" class="detail-section">
+            <div class="detail-section-title">Valores Medidos</div>
+            <div class="mediciones-table">
+              <div v-for="m in selectedInspeccion.mediciones" :key="m.id" class="medicion-row">
+                <span class="med-nombre">{{ m.punto_nombre }}</span>
+                <span class="med-valor">{{ m.valor ?? '—' }} <span class="med-unit">{{ m.unidad }}</span></span>
               </div>
             </div>
           </div>
 
-          <!-- Actions -->
-          <div class="detail-actions">
-            <RouterLink :to="`/activos/${selectedActivo.id}`" class="btn btn-secondary">
-              Ver detalle completo →
-            </RouterLink>
+          <div v-if="selectedInspeccion.archivos.length" class="detail-section">
+            <div class="detail-section-title">Adjuntos</div>
+            <div class="archivos-list">
+              <button
+                v-for="a in selectedInspeccion.archivos"
+                :key="a.id"
+                class="archivo-btn"
+                @click="downloadArchivo(selectedInspeccion.inspeccion.id, a.id, a.nombre_original)"
+              >
+                📎 {{ a.nombre_original }}
+              </button>
+            </div>
           </div>
         </template>
 
+        <!-- State 2: Inspection list for selected technique -->
+        <template v-else-if="selectedNode">
+          <div class="detail-header">
+            <div class="detail-title-block">
+              <div class="detail-tag">{{ selectedNode.activo.tag }}</div>
+              <div class="detail-name">{{ selectedNode.activo.nombre }}</div>
+              <div class="detail-meta">
+                {{ selectedNode.comp ? selectedNode.comp.nombre : 'General' }}
+                <span class="sep">›</span>
+                <span class="tec-label">{{ selectedNode.tecnica.codigo }}</span> {{ selectedNode.tecnica.nombre }}
+              </div>
+            </div>
+            <div>
+              <button v-if="canWrite" class="btn btn-primary btn-sm" @click="openNewInspeccion">+ Agregar</button>
+            </div>
+          </div>
+
+          <div v-if="loadingInspecciones" class="detail-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div></div>
+          <div v-else-if="!inspecciones.length" class="detail-empty">Sin registros para esta técnica y componente</div>
+          <div v-else class="insp-list">
+            <div
+              v-for="insp in inspecciones"
+              :key="insp.id"
+              class="insp-list-row"
+              @click="selectInspeccion(insp.id)"
+            >
+              <div class="insp-list-left">
+                <span :class="`cond-badge cond-badge-${insp.condicion}`">{{ COND_LABELS[insp.condicion] }}</span>
+                <span class="insp-list-fecha">{{ fmtDate(insp.fecha) }}</span>
+              </div>
+              <div class="insp-list-right">
+                <span v-if="insp.analista" class="insp-list-analista">{{ insp.analista }}</span>
+                <span v-if="insp.observaciones" class="insp-list-obs">{{ insp.observaciones }}</span>
+              </div>
+              <span class="insp-list-arrow">›</span>
+            </div>
+          </div>
+        </template>
+
+        <!-- State 3: Nothing selected -->
         <div v-else class="detail-placeholder">
           <svg class="placeholder-icon-svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="6" width="32" height="36" rx="2"/><line x1="14" y1="16" x2="34" y2="16"/><line x1="14" y1="22" x2="34" y2="22"/><line x1="14" y1="28" x2="24" y2="28"/></svg>
-          <div>Selecciona un activo en el árbol para ver su detalle</div>
+          <div>Selecciona una técnica en el árbol para ver sus registros</div>
         </div>
       </div>
     </div>
@@ -202,7 +329,7 @@
           <div class="modal-header">
             <div>
               <h4>Registrar Inspección</h4>
-              <div class="modal-sub">{{ selectedActivo?.tag }} — {{ selectedActivo?.nombre }}</div>
+              <div class="modal-sub">{{ selectedNode?.activo?.tag }} — {{ selectedNode?.activo?.nombre }}</div>
             </div>
             <button class="modal-close" @click="newInspModal.open = false">✕</button>
           </div>
@@ -338,13 +465,11 @@
 
 <script setup>
 import { ref, computed, reactive, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { api } from '@/services/api'
 import AssetFormModal from '@/components/AssetFormModal.vue'
 
 const auth = useAuthStore()
-const router = useRouter()
 
 const CRITICIDADES = [
   { key: 'critico', label: 'Crítico' },
@@ -366,15 +491,10 @@ const ESTADOS_OP = [
   { value: 'dado_de_baja',       label: 'Dado de Baja' },
 ]
 
-// State
+// ─── Tree state ──────────────────────────────────────────────────────────────
 const rawTree = ref([])
 const loadingTree = ref(true)
 const search = ref('')
-const selectedActivoId = ref(null)
-const selectedActivo = ref(null)
-const detailTecnicas = ref([])
-const loadingDetail = ref(false)
-
 const filters = reactive({ criticidad: [] })
 
 const expandedNodes = reactive({
@@ -383,7 +503,23 @@ const expandedNodes = reactive({
   sistemas: new Set(),
 })
 
-// Asset form modal
+// Activo expansion (opens component/technique sub-tree)
+const expandedActivos = reactive(new Set())
+// Per-activo tree data (loaded on first expand)
+const loadingActivoTree = reactive({})    // activo_id → boolean
+const activoTreeData = reactive({})       // activo_id → { componentes, generalTecnicas }
+// Per-activo expanded components/general nodes
+const expandedComps = reactive({})        // activo_id → Set<compKey>
+
+// ─── Detail panel state ───────────────────────────────────────────────────────
+// selectedNode: { activoId, activo, compKey, comp (null=general), tecnicaId, tecnica }
+const selectedNode = ref(null)
+const inspecciones = ref([])
+const loadingInspecciones = ref(false)
+const selectedInspeccion = ref(null)   // full detail: { inspeccion, mediciones, archivos }
+const loadingInspeccion = ref(false)
+
+// ─── Asset form modal ─────────────────────────────────────────────────────────
 const assetFormOpen = ref(false)
 const assetFormContext = reactive({ contrato: '', planta: '', sistema: '' })
 
@@ -399,7 +535,7 @@ function onAssetSaved() {
   loadTree()
 }
 
-// New inspection modal
+// ─── New inspection modal ────────────────────────────────────────────────────
 const newInspModal = reactive({
   open: false,
   saving: false,
@@ -423,7 +559,7 @@ const newInspModal = reactive({
 const canWrite = computed(() => ['admin', 'ingeniero_confiabilidad', 'supervisor', 'tecnico_campo'].includes(auth.user?.role))
 const hasActiveFilters = computed(() => search.value || filters.criticidad.length)
 
-// Filter + search logic
+// ─── Filter + search ──────────────────────────────────────────────────────────
 const filteredTree = computed(() => {
   return rawTree.value
     .map((contrato) => {
@@ -476,6 +612,7 @@ function clearFilters() {
   search.value = ''
 }
 
+// ─── Tree toggle functions ─────────────────────────────────────────────────────
 function toggleNode(type, id) {
   const setMap = { contrato: 'contratos', planta: 'plantas', sistema: 'sistemas' }
   const set = expandedNodes[setMap[type]]
@@ -498,35 +635,80 @@ function expandAll(open) {
   })
 }
 
-async function selectActivo(activo) {
-  selectedActivoId.value = activo.id
-  selectedActivo.value = activo
-  detailTecnicas.value = []
-  loadingDetail.value = true
-  try {
-    const { data } = await api.get('/inspections/resumen-activo', { params: { activo_id: activo.id } })
-    detailTecnicas.value = data.tecnicas
-    // Pre-load components for modal
-    newInspModal.componentes = data.componentes
-  } finally {
-    loadingDetail.value = false
+async function toggleActivo(activo) {
+  if (expandedActivos.has(activo.id)) {
+    expandedActivos.delete(activo.id)
+    // Clear selection if it was inside this activo
+    if (selectedNode.value?.activoId === activo.id) {
+      selectedNode.value = null
+      inspecciones.value = []
+      selectedInspeccion.value = null
+    }
+  } else {
+    expandedActivos.add(activo.id)
+    // Load component+technique tree if not cached
+    if (!activoTreeData[activo.id]) {
+      loadingActivoTree[activo.id] = true
+      try {
+        const { data } = await api.get('/inspections/activo-tree', { params: { activo_id: activo.id } })
+        activoTreeData[activo.id] = data
+        expandedComps[activo.id] = reactive(new Set())
+      } catch { /* ignore */ } finally {
+        loadingActivoTree[activo.id] = false
+      }
+    }
   }
 }
 
-function fmtDate(d) {
-  if (!d) return ''
-  return new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+function toggleComp(activoId, compKey) {
+  if (!expandedComps[activoId]) expandedComps[activoId] = reactive(new Set())
+  const set = expandedComps[activoId]
+  if (set.has(compKey)) set.delete(compKey)
+  else set.add(compKey)
 }
 
-function goToInspeccion(id) {
-  router.push(`/inspecciones/${id}`)
+async function selectTecnica(activo, comp, tecnica) {
+  selectedNode.value = {
+    activoId: activo.id,
+    activo,
+    compKey: comp ? comp.id : '__general__',
+    comp,
+    tecnicaId: tecnica.id,
+    tecnica,
+  }
+  selectedInspeccion.value = null
+  inspecciones.value = []
+  loadingInspecciones.value = true
+  try {
+    const params = { tecnica_id: tecnica.id, limit: 100 }
+    if (comp) params.componente_id = comp.id
+    else params.activo_id = activo.id
+    const { data } = await api.get('/inspections/inspecciones', { params })
+    inspecciones.value = data.inspecciones
+  } catch { /* ignore */ } finally {
+    loadingInspecciones.value = false
+  }
 }
 
-async function openNewInspeccion() {
+async function selectInspeccion(id) {
+  loadingInspeccion.value = true
+  try {
+    const { data } = await api.get(`/inspections/inspecciones/${id}`)
+    selectedInspeccion.value = data
+  } catch { /* ignore */ } finally {
+    loadingInspeccion.value = false
+  }
+}
+
+// ─── Inspection registration modal ────────────────────────────────────────────
+function openNewInspeccion() {
+  const node = selectedNode.value
+  const treeData = node ? activoTreeData[node.activoId] : null
+
   newInspModal.open = true
-  newInspModal.componente_id = ''
-  newInspModal.tecnica_id = ''
-  newInspModal.modo_falla_id = ''
+  newInspModal.error = ''
+  newInspModal.saving = false
+  newInspModal.componentes = treeData?.componentes || []
   newInspModal.tecnicasDisponibles = []
   newInspModal.modos_falla = []
   newInspModal.puntos = []
@@ -537,7 +719,21 @@ async function openNewInspeccion() {
   newInspModal.fecha = new Date().toISOString().slice(0, 16)
   newInspModal.estado_operacional = 'operativo'
   newInspModal.archivos = []
-  newInspModal.error = ''
+
+  // Pre-fill from selected node
+  if (node?.comp) {
+    newInspModal.componente_id = node.comp.id
+    newInspModal.tecnicasDisponibles = node.comp.tecnicas || []
+    newInspModal.tecnica_id = node.tecnica.id
+    onTecnicaChange()
+  } else if (node) {
+    // General: let user pick component
+    newInspModal.componente_id = ''
+    newInspModal.tecnica_id = node.tecnica.id
+  } else {
+    newInspModal.componente_id = ''
+    newInspModal.tecnica_id = ''
+  }
 }
 
 async function onComponenteChange() {
@@ -548,7 +744,10 @@ async function onComponenteChange() {
   newInspModal.puntos = []
   newInspModal.valores = {}
   if (!newInspModal.componente_id) return
-  newInspModal.tecnicasDisponibles = detailTecnicas.value
+  const node = selectedNode.value
+  const treeData = node ? activoTreeData[node.activoId] : null
+  const comp = treeData?.componentes.find((c) => c.id === newInspModal.componente_id)
+  newInspModal.tecnicasDisponibles = comp?.tecnicas || []
 }
 
 async function onTecnicaChange() {
@@ -557,7 +756,9 @@ async function onTecnicaChange() {
   newInspModal.modos_falla = []
   newInspModal.modo_falla_id = ''
   if (!newInspModal.tecnica_id) return
-  const comp = newInspModal.componentes.find((c) => c.id === newInspModal.componente_id)
+  const node = selectedNode.value
+  const treeData = node ? activoTreeData[node.activoId] : null
+  const comp = treeData?.componentes.find((c) => c.id === newInspModal.componente_id)
   try {
     const [puntosRes, modosRes] = await Promise.all([
       api.get('/inspections/puntos-tecnica', { params: { tecnica_id: newInspModal.tecnica_id } }),
@@ -603,14 +804,21 @@ async function submitInspeccion() {
     // Upload attached files
     for (const file of newInspModal.archivos) {
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('archivo', file)
       fd.append('tipo', 'informe')
       await api.post(`/inspections/inspecciones/${inspId}/archivos`, fd)
     }
 
     newInspModal.open = false
-    const refreshed = await api.get('/inspections/resumen-activo', { params: { activo_id: selectedActivoId.value } })
-    detailTecnicas.value = refreshed.data.tecnicas
+
+    // Refresh the inspection list in the detail panel
+    if (selectedNode.value) {
+      const params = { tecnica_id: selectedNode.value.tecnicaId, limit: 100 }
+      if (selectedNode.value.comp) params.componente_id = selectedNode.value.comp.id
+      else params.activo_id = selectedNode.value.activoId
+      const { data: refreshed } = await api.get('/inspections/inspecciones', { params })
+      inspecciones.value = refreshed.inspecciones
+    }
   } catch (err) {
     newInspModal.error = err.response?.data?.error || 'Error al guardar la inspección'
   } finally {
@@ -618,6 +826,29 @@ async function submitInspeccion() {
   }
 }
 
+async function downloadArchivo(inspId, archivoId, filename) {
+  try {
+    const { data } = await api.get(`/inspections/inspecciones/${inspId}/archivos/${archivoId}/download`)
+    const a = document.createElement('a')
+    a.href = data.url
+    a.download = filename
+    a.target = '_blank'
+    a.click()
+  } catch { /* ignore */ }
+}
+
+// ─── Format helpers ───────────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtDateTime(d) {
+  if (!d) return ''
+  return new Date(d).toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+// ─── Tree loading ─────────────────────────────────────────────────────────────
 async function loadTree() {
   loadingTree.value = true
   try {
@@ -680,17 +911,13 @@ onMounted(loadTree)
 .chip.active.chip-critico { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
 .chip.active.chip-esencial { background: #fffbeb; border-color: #d97706; color: #d97706; }
 .chip.active.chip-general { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
-.chip.active.chip-health-critico { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
-.chip.active.chip-health-alerta { background: #fffbeb; border-color: #d97706; color: #d97706; }
-.chip.active.chip-health-bueno { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
-.chip.active.chip-health-desconocido { background: var(--color-bg); border-color: var(--color-border); color: var(--color-text-muted); }
 
 .view-toggles { display: flex; gap: 0.375rem; }
 .toggle-btn { padding: 4px 8px; border: 1px solid var(--color-border); border-radius: 4px; background: #fff; font-size: 0.75rem; cursor: pointer; color: var(--color-text-secondary); }
 .toggle-btn:hover, .toggle-btn.active { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
 
 /* Panels */
-.panels { display: grid; grid-template-columns: 380px 1fr; gap: 1rem; flex: 1; min-height: 0; }
+.panels { display: grid; grid-template-columns: 400px 1fr; gap: 1rem; flex: 1; min-height: 0; }
 @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
 
 .tree-panel { overflow-y: auto; padding: 0.75rem 0; }
@@ -710,12 +937,34 @@ onMounted(loadTree)
 .tree-row-sistema { font-weight: 600; font-size: 0.875rem; color: var(--color-text-secondary); }
 .tree-row-activo { font-size: 0.8125rem; }
 
+/* Component row (level 4) */
+.tree-row-comp {
+  font-size: 0.8rem; font-weight: 600; color: var(--color-text-secondary);
+  border-left: 2px solid transparent;
+}
+.tree-row-comp.expanded { border-left-color: var(--color-brand); background: #f8faff; }
+.tree-row-comp:hover { background: #f0f4ff; }
+
+/* Technique row (level 5) */
+.tree-row-tecnica {
+  font-size: 0.775rem; color: var(--color-text-secondary); padding: 0.375rem 1rem;
+}
+.tree-row-tecnica.selected { background: var(--color-brand-light) !important; }
+.tree-row-tecnica.selected .tec-codigo, .tree-row-tecnica.selected .tec-nombre { color: var(--color-brand); }
+.tree-row-tecnica:not(.no-tec):hover { background: #eef4ff; }
+.tree-row-tecnica.no-tec { cursor: default; }
+
+.tec-codigo { font-family: monospace; font-size: 0.7rem; color: var(--color-text-muted); text-transform: uppercase; margin-right: 0.375rem; flex-shrink: 0; }
+.tec-nombre { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tec-nombre.muted { color: var(--color-text-muted); font-style: italic; font-weight: 400; }
+
 .expand-icon { width: 12px; font-size: 0.6rem; color: var(--color-text-muted); flex-shrink: 0; }
 .node-icon-svg { width: 15px; height: 15px; flex-shrink: 0; color: var(--color-text-muted); }
 .tree-row-contrato .node-icon-svg { color: rgba(255,255,255,0.6); }
 .tree-row-planta .node-icon-svg { color: var(--color-brand); opacity: 0.8; }
 .tree-row-sistema .node-icon-svg { color: var(--color-text-secondary); }
 .activo-icon-svg { width: 12px; height: 12px; color: var(--color-text-muted); }
+.comp-icon-svg { width: 12px; height: 12px; color: var(--color-brand); opacity: 0.7; }
 .node-label { flex: 1; }
 .node-code { font-size: 0.7rem; color: var(--color-text-muted); font-family: monospace; }
 .node-badges { display: flex; align-items: center; gap: 0.375rem; }
@@ -723,6 +972,8 @@ onMounted(loadTree)
 .indent-1 { width: 20px; flex-shrink: 0; }
 .indent-2 { width: 40px; flex-shrink: 0; }
 .indent-3 { width: 60px; flex-shrink: 0; }
+.indent-4 { width: 76px; flex-shrink: 0; }
+.indent-5 { width: 92px; flex-shrink: 0; }
 
 /* Crit bar on activo rows */
 .crit-bar { width: 3px; height: 28px; border-radius: 2px; flex-shrink: 0; background: var(--color-border); }
@@ -733,10 +984,13 @@ onMounted(loadTree)
 .activo-info { flex: 1; }
 .activo-tag { font-weight: 700; display: block; font-family: monospace; }
 .activo-name { font-size: 0.75rem; color: var(--color-text-muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px; }
-
 .activo-right { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
 
-.count-badge { font-size: 0.7rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; padding: 0 6px; color: var(--color-text-muted); }
+.tree-row-activo.expanded { background: #f5f8ff; }
+.tree-row-activo.match { background: #fef9e7; }
+
+.count-badge { font-size: 0.7rem; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; padding: 0 6px; color: var(--color-text-muted); flex-shrink: 0; }
+.count-badge.muted { opacity: 0.5; }
 
 .quick-add-btn {
   width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--color-border);
@@ -745,60 +999,72 @@ onMounted(loadTree)
 }
 .quick-add-btn:hover { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
 
-.tree-row-activo.selected { background: var(--color-brand-light) !important; }
-.tree-row-activo.match { background: #fef9e7; }
+/* Inline loading inside activo expansion */
+.tree-inline-loading { display: flex; align-items: center; padding: 0.5rem 1rem 0.5rem 96px; }
+.spinner-xs { width: 12px; height: 12px; border: 2px solid var(--color-border); border-top-color: var(--color-brand); border-radius: 50%; animation: spin 0.6s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Detail panel */
-.detail-header { display: flex; gap: 0.75rem; align-items: flex-start; }
-.detail-crit-bar { width: 4px; border-radius: 2px; align-self: stretch; flex-shrink: 0; min-height: 60px; }
-.crit-bar-critico { background: #dc2626; }
-.crit-bar-esencial { background: #d97706; }
-.crit-bar-general { background: #16a34a; }
-.detail-title-block { flex: 1; }
+.detail-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.75rem; }
+.detail-title-block { flex: 1; min-width: 0; }
 .detail-tag { font-size: 0.75rem; font-family: monospace; color: var(--color-text-muted); }
 .detail-name { font-size: 1.125rem; font-weight: 700; }
-.detail-meta { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.125rem; }
-.detail-badges { display: flex; flex-direction: column; gap: 0.375rem; align-items: flex-end; }
+.detail-meta { font-size: 0.8rem; color: var(--color-text-muted); margin-top: 0.25rem; display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
+.sep { color: var(--color-border); }
+.tec-label { font-family: monospace; font-size: 0.75rem; }
 
-
-.detail-section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.625rem; }
+.detail-section { display: flex; flex-direction: column; gap: 0.5rem; }
 .detail-section-title { font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .detail-loading, .detail-empty { display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 1.5rem; color: var(--color-text-muted); font-size: 0.875rem; }
 
-/* Technique cards */
-.detail-tecnicas { display: flex; flex-direction: column; gap: 0.5rem; }
-.detail-tecnica {
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 0.625rem 0.75rem; border-radius: 8px; background: var(--color-bg);
-  border: 1px solid var(--color-border); transition: background 0.1s, border-color 0.1s;
+.back-btn { background: none; border: none; cursor: pointer; color: var(--color-brand); font-size: 0.8125rem; padding: 0.25rem 0; font-weight: 600; }
+.back-btn:hover { text-decoration: underline; }
+
+/* Inspection detail fields */
+.insp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; }
+.insp-field { display: flex; flex-direction: column; gap: 0.125rem; font-size: 0.8125rem; }
+.insp-label { font-size: 0.7rem; font-weight: 600; color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.insp-obs p { font-size: 0.8125rem; color: var(--color-text-primary); margin: 0.25rem 0 0; white-space: pre-wrap; }
+
+/* Measurements */
+.mediciones-table { display: flex; flex-direction: column; gap: 0.25rem; }
+.medicion-row { display: flex; justify-content: space-between; align-items: center; padding: 0.375rem 0.5rem; background: var(--color-bg); border-radius: 5px; font-size: 0.8125rem; }
+.med-nombre { color: var(--color-text-secondary); }
+.med-valor { font-weight: 600; font-family: monospace; }
+.med-unit { font-family: inherit; font-weight: 400; font-size: 0.7rem; color: var(--color-text-muted); margin-left: 0.25rem; }
+
+/* Attachments */
+.archivos-list { display: flex; flex-direction: column; gap: 0.375rem; }
+.archivo-btn { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 0.375rem 0.625rem; font-size: 0.8125rem; cursor: pointer; text-align: left; color: var(--color-brand); transition: background 0.1s; }
+.archivo-btn:hover { background: #eef4ff; }
+
+/* Inspection list (right panel) */
+.insp-list { display: flex; flex-direction: column; gap: 0; }
+.insp-list-row {
+  display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid var(--color-border); cursor: pointer; transition: background 0.1s;
 }
-.detail-tecnica.clickable { cursor: pointer; }
-.detail-tecnica.clickable:hover { background: #eef4ff; border-color: #bfdbfe; }
-.dt-left { display: flex; flex-direction: column; gap: 0.125rem; min-width: 0; }
-.dt-codigo { font-size: 0.7rem; font-family: monospace; color: var(--color-text-muted); text-transform: uppercase; }
-.dt-nombre { font-weight: 500; font-size: 0.8125rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dt-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.125rem; flex-shrink: 0; margin-left: 0.75rem; }
-.dt-fecha { font-size: 0.7rem; color: var(--color-text-muted); }
-.dt-analista { font-size: 0.7rem; color: var(--color-text-muted); font-style: italic; }
-.dt-nodata { opacity: 0.7; }
-.dt-pending { font-size: 0.75rem; color: var(--color-text-muted); }
+.insp-list-row:hover { background: #f5f8ff; }
+.insp-list-left { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+.insp-list-fecha { font-size: 0.8rem; color: var(--color-text-muted); white-space: nowrap; }
+.insp-list-right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
+.insp-list-analista { font-size: 0.775rem; color: var(--color-text-secondary); font-style: italic; }
+.insp-list-obs { font-size: 0.775rem; color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.insp-list-arrow { color: var(--color-text-muted); flex-shrink: 0; font-size: 1rem; }
 
 /* Condition badges */
-.cond-badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; }
+.cond-badge { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
 .cond-badge-normal { background: #f0fdf4; color: #15803d; }
 .cond-badge-observacion { background: #eff6ff; color: #1d4ed8; }
 .cond-badge-alerta { background: #fffbeb; color: #b45309; }
 .cond-badge-urgencia { background: #fef2f2; color: #dc2626; }
 
-.detail-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: auto; }
-
-.detail-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--color-text-muted); font-size: 0.9375rem; gap: 0.75rem; }
+.detail-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; color: var(--color-text-muted); font-size: 0.9375rem; gap: 0.75rem; text-align: center; }
 .placeholder-icon-svg { width: 48px; height: 48px; color: var(--color-border); }
 
 /* Modals */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
 .modal { background: #fff; border-radius: 12px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
-.modal-xl { max-width: 860px; }
 .modal-insp { max-width: 580px; }
 .modal-header { display: flex; align-items: flex-start; justify-content: space-between; padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--color-border); }
 .modal-header h4 { font-size: 1rem; font-weight: 700; margin: 0; }
